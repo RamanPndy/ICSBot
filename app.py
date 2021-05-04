@@ -1,5 +1,6 @@
 from flask import Flask, request
 import requests, os
+from datetime import datetime
 from twilio.twiml.messaging_response import MessagingResponse
 import dialogflow
 from google.api_core.exceptions import InvalidArgument
@@ -12,7 +13,7 @@ SESSION_ID = 'me'
 
 app = Flask(__name__)
 
-entities = {"oxygen cylinder": "Oxygen%20Cylinder", "oxygen": "Oxygen", "icu": "ICU", "icu bed": "ICU%20Bed", "medicine": "Medicine", "plasma": "Plasma"}
+entities = {"oxygen cylinder": "Oxygen%20Cylinder", "oxygen": "Oxygen", "icu": "ICU", "icu bed": "ICU%20Bed", "medicine": "Medicine", "plasma": "Plasma", "hospital bed": "Hospital%20Bed", "hospital": "Hospital"}
 cities = {"kanpur": "Kanpur,%20Uttar%20Pradesh", "varanasi":"Varanasi,%20Uttar%20Pradesh", "banaras":"Varanasi,%20Uttar%20Pradesh", "lucknow": "Lucknow,%20Uttar%20Pradesh", "delhi": "Delhi", "mumbai": "Mumbai"}
 
 
@@ -49,19 +50,40 @@ def bot():
     providers = qry_res_data["data"]["covid"]
     provider_details = []
     for provider in providers:
-        provider_res = "Name: {}\nProvider Name: {}\nProvider Contact Number: {}\nQuantity: {}\nVerified At: {}\n\n".format(provider.get("name", "Unavailable"), provider.get("provider_name", "Unavailable"), provider.get("provider_contact", "Unavailable"), provider.get("quantity", "Unavailable"), provider.get('filedAt', ''))
-        provider_details.append(provider_res)
+        name = provider.get("name", "Unavailable")
+        provider_name = provider.get("provider_name", "Unavailable")
+        provider_contact = provider.get("provider_contact", "Unavailable")
+        quantity = provider.get("quantity", "Unavailable")
+        filedAt = provider.get("filedAt", "")
+        verfiedAt = ""
+        if filedAt:
+            verifieddt = datetime.strptime(filedAt, '%Y-%m-%dT%H:%M:%S.%f%z')
+            verfiedAt = f'{verifieddt:%d/%m/%Y %H:%M:%S}'
+        provider = ""
+        if name:
+            provider = name
+        elif provider_name:
+            provider = provider_name
+        elif name and provider_name:
+            provider = name + " OR " + provider_name
+        if provider and provider_contact and verfiedAt:
+            provider_res = "Name: {}\nProvider Contact Number: {}\nQuantity: {}\nVerified At: {}\n\n".format(provider, provider_contact, quantity, verfiedAt)
+            provider_details.append(provider_res)
 
     # print("Query text:", response.query_result.query_text)
     # print("Detected intent:", response.query_result.intent.display_name)
     # print("Detected intent confidence:", response.query_result.intent_detection_confidence)
     # print("Fulfillment text:", response.query_result.fulfillment_text)
 
-    print (provider_details)
+    ics_resp = ''.join(provider_details[::-1][:5])
+    print (ics_resp)
 
     resp = MessagingResponse()
-    msg = resp.message()
-    msg.body(''.join(provider_details[::-1]))
+    if ics_resp:
+        msg = resp.message(ics_resp)
+    else:
+        msg = resp.message("No data found")
+    msg.body(ics_resp)
     return str(resp)
 
 @app.route('/fulfillment', methods=['POST'])
