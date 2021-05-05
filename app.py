@@ -30,7 +30,7 @@ cities = {"kanpur": "Kanpur,%20Uttar%20Pradesh", "varanasi":"Varanasi,%20Uttar%2
 @app.route('/', methods=['GET'])
 def welcome():
     return "Welcome to ICS Bot App"
-    
+
 @app.route('/bot', methods=['POST'])
 def bot():
     incoming_msg = request.values.get('Body', '').lower()
@@ -45,81 +45,122 @@ def bot():
     except InvalidArgument:
         raise
 
-    print("Response Parameters:", response.query_result.parameters.fields)
     query_fields = response.query_result.parameters.fields
-    location = query_fields['location'].string_value
-    entity = query_fields['entity'].string_value
+    print("Response Parameters:", query_fields)
 
-    req = entities.get(entity, '')
-    loc = cities.get(location, '')
+    if 'feed' not in incoming_msg:
+        location = query_fields['location'].string_value
+        entity = query_fields['entity'].string_value
 
-    ics_qry = "https://fierce-bayou-28865.herokuapp.com/api/v1/covid/?entity={}&city={}".format(req, loc)
-    print (ics_qry)
+        req = entities.get(entity, '')
+        loc = cities.get(location, '')
 
-    qry_res = requests.get(ics_qry)
-    qry_res_data = qry_res.json()
-    print (qry_res_data)
+        ics_qry = "https://fierce-bayou-28865.herokuapp.com/api/v1/covid/?entity={}&city={}".format(req, loc)
+        print (ics_qry)
 
-    qry_providers = qry_res_data["data"]["covid"]
-    dedupe_providers = { each['provider_contact'] : each for each in qry_providers }.values()
-    unique_providers = list(dedupe_providers)[::-1]
+        qry_res = requests.get(ics_qry)
+        qry_res_data = qry_res.json()
+        print (qry_res_data)
 
-    dbresults = collection.find({
-        '$and': [
-            {'entity': entity},
-            {'location': location}
-        ]
-    })
-    dbfiltereddata = []
-    for dbr in dbresults:
-        dbfiltereddata.append(dbr)
-    
-    providers_data = []
-    new_data_to_be_added_in_db = []
-    if dbfiltereddata and not unique_providers:
-        providers_data = dbfiltereddata
-    elif unique_providers and not dbfiltereddata:
-        providers_data = unique_providers
-        new_data_to_be_added_in_db = unique_providers
-    elif unique_providers and dbfiltereddata:
-        providers_data = dbfiltereddata
-        dbdatacontacts = [dbd.get('provider_contact') for dbd in dbfiltereddata]
-        for pd in unique_providers:
-            pdc = pd.get("provider_contact", "")
-            if pdc not in dbdatacontacts:
-                new_data_to_be_added_in_db.append(pd)
-                providers_data.append(pd)
-    
-    for newdata in new_data_to_be_added_in_db:
-        doc_id = str(uuid.uuid4())
-        provider_name, provider_contact, filed_at, quantity, address = get_provider_data(newdata)
-        provider_dict = {"entity": entity, "location": location, "provider_name": provider_name, "provider_contact": provider_contact, "provider_address": address, "quantity": quantity, "filedAt": filed_at}
+        qry_providers = qry_res_data["data"]["covid"]
+        dedupe_providers = { each['provider_contact'] : each for each in qry_providers }.values()
+        unique_providers = list(dedupe_providers)[::-1]
+
+        dbresults = collection.find({
+            '$and': [
+                {'entity': entity},
+                {'location': location}
+            ]
+        })
+        dbfiltereddata = []
+        for dbr in dbresults:
+            dbfiltereddata.append(dbr)
+        
+        providers_data = []
+        new_data_to_be_added_in_db = []
+        if dbfiltereddata and not unique_providers:
+            providers_data = dbfiltereddata
+        elif unique_providers and not dbfiltereddata:
+            providers_data = unique_providers
+            new_data_to_be_added_in_db = unique_providers
+        elif unique_providers and dbfiltereddata:
+            providers_data = dbfiltereddata
+            dbdatacontacts = [dbd.get('provider_contact') for dbd in dbfiltereddata]
+            for pd in unique_providers:
+                pdc = pd.get("provider_contact", "")
+                if pdc not in dbdatacontacts:
+                    new_data_to_be_added_in_db.append(pd)
+                    providers_data.append(pd)
+        
+        for newdata in new_data_to_be_added_in_db:
+            doc_id = str(uuid.uuid4())
+            provider_name, provider_contact, filed_at, quantity, address = get_provider_data(newdata)
+            provider_dict = {"entity": entity, "location": location, "provider_name": provider_name, "provider_contact": provider_contact, "provider_address": address, "quantity": quantity, "filedAt": filed_at}
+            collection.insert_one(provider_dict)
+
+        provider_details = []
+        for provider in providers_data:
+            provider_name, provider_contact, filed_at, quantity, address = get_provider_data(provider)
+            if provider_name and provider_contact and filed_at:
+                verifieddt = datetime.strptime(filed_at, '%Y-%m-%dT%H:%M:%S.%f%z')
+                verified_at = f'{verifieddt:%d/%m/%Y %H:%M:%S}'
+                provider_res = "Name: {}\nContact Number: {}\nAddress: {}\nQuantity: {}\nVerified At: {}\n\n".format(provider_name, provider_contact, address, quantity, verified_at)
+                provider_details.append(provider_res)
+
+        # print("Query text:", response.query_result.query_text)
+        # print("Detected intent:", response.query_result.intent.display_name)
+        # print("Detected intent confidence:", response.query_result.intent_detection_confidence)
+        # print("Fulfillment text:", response.query_result.fulfillment_text)
+
+        ics_resp = ''.join(provider_details[:10])
+        print (ics_resp)
+
+        resp = MessagingResponse()
+        if ics_resp:
+            msg = resp.message("Below are some resources we found\n")
+        else:
+            msg = resp.message("No data found")
+        msg.body(ics_resp)
+        return str(resp)
+    else:
+        name = query_fields['name'].string_value
+        location = query_fields['location'].string_value
+        entity = query_fields['entity'].string_value
+        provider_contact = query_fields['contact'].string_value
+        quantity = query_fields['quantity'].string_value
+        verifiedby = query_fields['verifiedby'].string_value
+
+        req = entities.get(entity, '').replace("%20", " ")
+        loc = cities.get(location, '').replace("%20", " ")
+
+        ics_qry = "https://fierce-bayou-28865.herokuapp.com/api/v1/covid/nootp"
+        feed_data = {
+                "name":name,
+                "entity":req,
+                "quantity":quantity,
+                "city":loc,
+                "provider_name":name,
+                "provider_address":"",
+                "provider_contact":provider_contact,
+                "link":"",
+                "filedAt":current_milli_time(),
+                "location":"0,0"
+            }
+
+        qry_res = requests.post(ics_qry, data = feed_data)
+        qry_res_data = qry_res.json()
+        print(qry_res_data)
+
+        filed_at = datetime.utcfromtimestamp(feed_data["filedAt"]/1000).isoformat()
+
+        provider_dict = {"entity": entity, "location": location, "provider_name": name, "provider_contact": contact, "provider_address": loc, "quantity": quantity, "filedAt": filed_at, "verifiedby": verifiedby}
         collection.insert_one(provider_dict)
 
-    provider_details = []
-    for provider in providers_data:
-        provider_name, provider_contact, filed_at, quantity, address = get_provider_data(provider)
-        if provider_name and provider_contact and filed_at:
-            verifieddt = datetime.strptime(filed_at, '%Y-%m-%dT%H:%M:%S.%f%z')
-            verified_at = f'{verifieddt:%d/%m/%Y %H:%M:%S}'
-            provider_res = "Name: {}\nContact Number: {}\nAddress: {}\nQuantity: {}\nVerified At: {}\n\n".format(provider_name, provider_contact, address, quantity, verified_at)
-            provider_details.append(provider_res)
-
-    # print("Query text:", response.query_result.query_text)
-    # print("Detected intent:", response.query_result.intent.display_name)
-    # print("Detected intent confidence:", response.query_result.intent_detection_confidence)
-    # print("Fulfillment text:", response.query_result.fulfillment_text)
-
-    ics_resp = ''.join(provider_details[:10])
-    print (ics_resp)
-
-    resp = MessagingResponse()
-    if ics_resp:
-        msg = resp.message("Below are some resources we found\n")
-    else:
-        msg = resp.message("No data found")
-    msg.body(ics_resp)
-    return str(resp)
+        resp = MessagingResponse()
+        msg = resp.message("Thanks for providing information\n")
+        provider_res = "Name: {}\nContact Number: {}\nAddress: {}\nQuantity: {}\nVerified At: {}\n\n".format(name, provider_contact, location, quantity, filed_at)
+        msg.body(provider_res)
+        return str(resp)
 
 @app.route('/fulfillment', methods=['POST'])
 def fulfillment():
