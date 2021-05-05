@@ -7,6 +7,8 @@ from google.api_core.exceptions import InvalidArgument
 import firebase_admin
 from firebase_admin import firestore
 
+from utils import get_provider_data
+
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = 'icsbotsa.json'
 
 PROJECT_ID = os.environ.get('PROJECTID')
@@ -25,30 +27,6 @@ app = Flask(__name__)
 
 entities = {"oxygen cylinder": "Oxygen%20Cylinder", "oxygen": "Oxygen", "icu": "ICU", "icu bed": "ICU%20Bed", "medicine": "Medicine", "plasma": "Plasma", "hospital bed": "Hospital%20Bed", "hospital": "Hospital"}
 cities = {"kanpur": "Kanpur,%20Uttar%20Pradesh", "varanasi":"Varanasi,%20Uttar%20Pradesh", "banaras":"Varanasi,%20Uttar%20Pradesh", "lucknow": "Lucknow,%20Uttar%20Pradesh", "delhi": "Delhi", "mumbai": "Mumbai"}
-
-
-def get_provider_data(provider):
-    name = provider.get("name", "")
-    provider_name = provider.get("provider_name", "")
-    provider_contact = provider.get("provider_contact", "Unavailable")
-    quantity = provider.get("quantity", "Unavailable")
-    filedAt = provider.get("filedAt", "")
-    verfiedAt = ""
-    if filedAt:
-        try:
-            verifieddt = datetime.strptime(filedAt, '%Y-%m-%dT%H:%M:%S.%f%z')
-            verfiedAt = f'{verifieddt:%d/%m/%Y %H:%M:%S}'
-        except Exception:
-            verfiedAt =  filedAt
-    provider = ""
-    if name:
-        provider = name
-    elif provider_name:
-        provider = provider_name
-    elif name and provider_name:
-        provider = name + " OR " + provider_name
-    return provider, provider_contact.replace("\n", ""), verfiedAt, quantity
-
 
 @app.route('/bot', methods=['POST'])
 def bot():
@@ -140,4 +118,4 @@ def fulfillment():
     return "working"
 
 if __name__ == '__main__':
-    app.run()
+    app.run(host='0.0.0.0', port=5000, threaded=True)

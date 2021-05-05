@@ -1,3 +1,6 @@
 .DS_Store
 *.json
 whatsapp-bot-venv/
+*.zip
+*.sh
+__pycache__
