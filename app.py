@@ -1,6 +1,5 @@
 from flask import Flask, request
 import requests, os, uuid
-from datetime import datetime
 from twilio.twiml.messaging_response import MessagingResponse
 import dialogflow
 from google.api_core.exceptions import InvalidArgument

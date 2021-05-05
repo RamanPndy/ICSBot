@@ -22,4 +22,4 @@ Google Project ID
 Note :- Make sure Firestore DB name and Dialogflow Project name should be same which would be transalated to PROJECTID enviornment variable.
 
 To build the application run <b>./build.sh</b> which will build the docker image of the application. <br>
-To run the application run <b>./run.sh <projectid> <keys_path></b> which will run the dockerized application on port <b>5000</b>
+To run the application run <b>./run.sh <project_id> <keys_path></b> which will run the dockerized application on port <b>5000</b>
