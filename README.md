@@ -8,6 +8,8 @@ Once dialogflow provides entity and location then bot hits IndiaCovidSupport API
 
 Bot is in BETA phase and We are working more to make it more useful and provide more useful resources to needy one.
 
+One can also search verified resources at : https://indiacovidsupport.com/
+
 Any suggesstions and comments are always welcome.
 
-Backend is Python Based Flask framework integrated with Whatsapp via Twillio and Dialogflow for NLP.
+Backend is Python Based Flask framework integrated with Whatsapp via Twillio and Dialogflow for NLP and Firestore for data storage.

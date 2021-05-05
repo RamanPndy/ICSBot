@@ -124,12 +124,12 @@ def bot():
     # print("Detected intent confidence:", response.query_result.intent_detection_confidence)
     # print("Fulfillment text:", response.query_result.fulfillment_text)
 
-    ics_resp = ''.join(provider_details[::-1][:5])
+    ics_resp = ''.join(provider_details[::-1][:10])
     print (ics_resp)
 
     resp = MessagingResponse()
     if ics_resp:
-        msg = resp.message("Below are some resources we found")
+        msg = resp.message("Below are some resources we found\n")
     else:
         msg = resp.message("No data found")
     msg.body(ics_resp)
