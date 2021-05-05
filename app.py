@@ -3,8 +3,9 @@ import requests, os, uuid
 from twilio.twiml.messaging_response import MessagingResponse
 import dialogflow
 from google.api_core.exceptions import InvalidArgument
-import firebase_admin
-from firebase_admin import firestore
+from datetime import datetime
+import pymongo
+import urllib
 
 from utils import get_provider_data
 
@@ -14,17 +15,16 @@ PROJECT_ID = os.environ.get('PROJECTID')
 DIALOGFLOW_LANGUAGE_CODE = 'en'
 SESSION_ID = 'me'
 
-cred_obj = firebase_admin.credentials.Certificate('icsbot-firebase.json')
-default_app = firebase_admin.initialize_app(cred_obj, {
-	'databaseURL':"https://{}-default-rtdb.firebaseio.com/".format(PROJECT_ID)
-	})
+db_username = urllib.parse.quote_plus(os.environ.get('DBUSER'))
+db_pass = urllib.parse.quote_plus(os.environ.get('DBPASS'))
 
-database = firestore.client()
-col_ref = database.collection('ics')
+client = pymongo.MongoClient("mongodb+srv://{}:{}@cluster0.bsugd.mongodb.net/icsdb?retryWrites=true&w=majority".format(db_username, db_pass))
+db = client.icsdb
+collection = db.ics
 
 app = Flask(__name__)
 
-entities = {"oxygen cylinder": "Oxygen%20Cylinder", "oxygen": "Oxygen", "icu": "ICU", "icu bed": "ICU%20Bed", "medicine": "Medicine", "plasma": "Plasma", "hospital bed": "Hospital%20Bed", "hospital": "Hospital"}
+entities = {"oxygen cylinder": "Oxygen%20Cylinder", "oxygen": "Oxygen", "icu": "ICU", "icu bed": "ICU%20Bed", "medicine": "Medicine", "plasma": "Plasma", "hospital bed": "Hospital%20Bed", "hospital": "Hospital", "food":"Homemade%20Food" }
 cities = {"kanpur": "Kanpur,%20Uttar%20Pradesh", "varanasi":"Varanasi,%20Uttar%20Pradesh", "banaras":"Varanasi,%20Uttar%20Pradesh", "lucknow": "Lucknow,%20Uttar%20Pradesh", "delhi": "Delhi", "mumbai": "Mumbai"}
 
 @app.route('/bot', methods=['POST'])
@@ -57,14 +57,18 @@ def bot():
     print (qry_res_data)
 
     qry_providers = qry_res_data["data"]["covid"]
-    unique_providers = { each['provider_contact'] : each for each in qry_providers }.values()
+    dedupe_providers = { each['provider_contact'] : each for each in qry_providers }.values()
+    unique_providers = list(dedupe_providers)[::-1]
 
-    dbresults = col_ref.where('location', '==', location).get()
+    dbresults = collection.find({
+        '$and': [
+            {'entity': entity},
+            {'location': location}
+        ]
+    })
     dbfiltereddata = []
     for dbr in dbresults:
-        datadict = dbr._data
-        if datadict.get('entity') ==  entity:
-            dbfiltereddata.append(datadict)
+        dbfiltereddata.append(dbr)
     
     providers_data = []
     new_data_to_be_added_in_db = []
@@ -84,16 +88,17 @@ def bot():
     
     for newdata in new_data_to_be_added_in_db:
         doc_id = str(uuid.uuid4())
-        provider_name, provider_contact, verfiedAt, quantity = get_provider_data(newdata)
-        provider_dict = {"entity": entity, "location": location, "provider_name": provider_name, "provider_contact": provider_contact, "quantity": quantity, "filedAt": verfiedAt}
-        doc = col_ref.document(doc_id)
-        doc.set(provider_dict)
+        provider_name, provider_contact, filed_at, quantity, address = get_provider_data(newdata)
+        provider_dict = {"entity": entity, "location": location, "provider_name": provider_name, "provider_contact": provider_contact, "provider_address": address, "quantity": quantity, "filedAt": filed_at}
+        collection.insert_one(provider_dict)
 
     provider_details = []
     for provider in providers_data:
-        provider_name, provider_contact, verfiedAt, quantity = get_provider_data(provider)
-        if provider_name and provider_contact and verfiedAt:
-            provider_res = "Name: {}\nProvider Contact Number: {}\nQuantity: {}\nVerified At: {}\n\n".format(provider_name, provider_contact, quantity, verfiedAt)
+        provider_name, provider_contact, filed_at, quantity, address = get_provider_data(provider)
+        if provider_name and provider_contact and filed_at:
+            verifieddt = datetime.strptime(filed_at, '%Y-%m-%dT%H:%M:%S.%f%z')
+            verified_at = f'{verifieddt:%d/%m/%Y %H:%M:%S}'
+            provider_res = "Name: {}\nContact Number: {}\nAddress: {}\nQuantity: {}\nVerified At: {}\n\n".format(provider_name, provider_contact, address, quantity, verified_at)
             provider_details.append(provider_res)
 
     # print("Query text:", response.query_result.query_text)
@@ -101,7 +106,7 @@ def bot():
     # print("Detected intent confidence:", response.query_result.intent_detection_confidence)
     # print("Fulfillment text:", response.query_result.fulfillment_text)
 
-    ics_resp = ''.join(provider_details[::-1][:10])
+    ics_resp = ''.join(provider_details[:10])
     print (ics_resp)
 
     resp = MessagingResponse()

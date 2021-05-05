@@ -12,14 +12,11 @@ One can also search verified resources at : https://indiacovidsupport.com/
 
 Any suggesstions and comments are always welcome.
 
-Backend is Python Based Flask framework integrated with Whatsapp via Twillio and Dialogflow for NLP and Firestore for data storage.
+Backend is Python Based Flask framework integrated with Whatsapp via Twillio and Dialogflow for NLP and MongoDB for data storage.
 
 To run the application following files are needed:
 Firebase Private Key : icsbot-firebase.json<br>
 Dialogflow Service Account Key : icsbotsa.json<br>
-Google Project ID
-
-Note :- Make sure Firestore DB name and Dialogflow Project name should be same which would be transalated to PROJECTID enviornment variable.
 
 To build the application run <b>./build.sh</b> which will build the docker image of the application. <br>
 To run the application run <b>./run.sh <project_id> <keys_path></b> which will run the dockerized application on port <b>5000</b>
