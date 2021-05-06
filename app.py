@@ -9,7 +9,9 @@ from datetime import datetime
 
 from utils import get_provider_data, current_milli_time, get_verified_at, get_data_from_field
 
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = 'icsbotsa.json'
+# os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = 'icsbotsa.json'
+
+APPPORT = os.environ.get('PORT')
 
 PROJECT_ID = os.environ.get('PROJECTID')
 DIALOGFLOW_LANGUAGE_CODE = 'en'
@@ -195,4 +197,4 @@ def fulfillment():
     return "working"
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, threaded=True)
+    app.run(host='0.0.0.0', port=int(APPPORT), threaded=True)
