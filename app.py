@@ -24,12 +24,18 @@ collection = db.ics
 
 app = Flask(__name__)
 
-entities = {"oxygen cylinder": "Oxygen%20Cylinder", "oxygen": "Oxygen", "oxygen refilling": "Oxygen%20Refilling", "icu": "ICU", "icu bed": "ICU%20Bed", "medicine": "Medicine", "plasma": "Plasma", "hospital bed": "Hospital%20Bed", "hospital": "Hospital", "food":"Homemade%20Food" }
-cities = {"kanpur": "Kanpur,%20Uttar%20Pradesh", "varanasi":"Varanasi,%20Uttar%20Pradesh", "banaras":"Varanasi,%20Uttar%20Pradesh", "lucknow": "Lucknow,%20Uttar%20Pradesh", "delhi": "Delhi", "mumbai": "Mumbai"}
+entities = {"oxygen cylinder": "Oxygen%20Cylinder", "oxygen": "Oxygen", "oxygen refilling": "Oxygen%20Refilling", "icu": "ICU", "icu bed": "ICU%20Bed", "medicine": "Medicine", "plasma": "Plasma", "hospital bed": "Hospital%20Bed", "hospital": "Hospital", "food":"Homemade%20Food" , "fabiflu": "Fabiflu", "ambulance": "Ambulance"}
+cities = {"kanpur": "Kanpur,%20Uttar%20Pradesh", "varanasi":"Varanasi,%20Uttar%20Pradesh", "banaras":"Varanasi,%20Uttar%20Pradesh", "lucknow": "Lucknow,%20Uttar%20Pradesh", "delhi": "New%20Delhi,%20Delhi", "mumbai": "Mumbai,%20Maharashtra"}
 
 @app.route('/', methods=['GET'])
 def welcome():
     return "Welcome to ICS Bot App"
+
+def get_default_error_response():
+    resp = MessagingResponse()
+    msg = resp.message("No data found for your query.\n")
+    msg.body("Please try with another query.\n")
+    return str(resp)
 
 @app.route('/bot', methods=['POST'])
 def bot():
@@ -48,12 +54,18 @@ def bot():
     query_fields = response.query_result.parameters.fields
     print("Response Parameters:", query_fields)
 
+    if not query_fields:
+        return get_default_error_response()
+
     if 'feed' not in incoming_msg:
         location = query_fields['location'].string_value
         entity = query_fields['entity'].string_value
 
         req = entities.get(entity, '')
         loc = cities.get(location, '')
+
+        if not req and not loc:
+            return get_default_error_response()
 
         ics_qry = "https://fierce-bayou-28865.herokuapp.com/api/v1/covid/?entity={}&city={}".format(req, loc)
         print (ics_qry)
@@ -95,7 +107,7 @@ def bot():
         for newdata in new_data_to_be_added_in_db:
             doc_id = str(uuid.uuid4())
             provider_name, provider_contact, filed_at, quantity, address = get_provider_data(newdata)
-            provider_dict = {"entity": entity, "location": location, "provider_name": provider_name, "provider_contact": provider_contact, "provider_address": address, "quantity": quantity, "filedAt": filed_at}
+            provider_dict = {"entity": entity, "location": location, "provider_name": provider_name, "provider_contact": provider_contact, "provider_address": address, "quantity": quantity if quantity else "Unknown", "filedAt": filed_at}
             try:
                 collection.insert_one(provider_dict)
             except Exception as e:
@@ -105,8 +117,8 @@ def bot():
         for provider in providers_data:
             provider_name, provider_contact, filed_at, quantity, address = get_provider_data(provider)
             verified_at = get_verified_at(filed_at)
-            provider_res = "Name: {}\nContact Number: {}\nAddress: {}\nQuantity: {}\nVerified At: {}\n\n".format(provider_name if provider_name else "Unavailable", provider_contact if provider_contact else "Unavailable", address if address else "Unavailable", quantity if quantity else "Unavailable", verified_at)
-            provider_details.append(provider_res)
+            provider_res = "Name: {}\nContact Number: {}\nAddress: {}\nQuantity: {}\nVerified At: {}\n\n".format(provider_name if provider_name else "Unavailable", provider_contact if provider_contact else "Unavailable", address if address else "Unavailable", quantity if quantity else "Unknown", verified_at)
+            provider_details.append(provider_res.replace("-1", "Unknown"))
 
         # print("Query text:", response.query_result.query_text)
         # print("Detected intent:", response.query_result.intent.display_name)
@@ -118,9 +130,9 @@ def bot():
 
         resp = MessagingResponse()
         if ics_resp:
-            msg = resp.message("Below are some resources we found\n")
+            msg = resp.message("Below are some resources we have found\n")
         else:
-            msg = resp.message("No data found")
+            msg = resp.message("No data found. Please try with different query.\n")
         msg.body(ics_resp)
         return str(resp)
     else:
@@ -139,7 +151,7 @@ def bot():
         feed_data = {
                 "name":name,
                 "entity":req,
-                "quantity":quantity,
+                "quantity":quantity if quantity else "Unknown",
                 "city":loc,
                 "provider_name":name,
                 "provider_address":address if address else "Unavailable",
@@ -161,7 +173,7 @@ def bot():
 
         filed_at = datetime.utcfromtimestamp(feed_data["filedAt"]/1000).isoformat()
 
-        provider_dict = {"entity": entity, "location": location, "provider_name": name, "provider_contact": provider_contact, "provider_address": address if address else loc, "quantity": quantity, "filedAt": filed_at, "verifiedby": verifiedby}
+        provider_dict = {"entity": entity, "location": location, "provider_name": name, "provider_contact": provider_contact, "provider_address": address if address else loc, "quantity": quantity if quantity else "Unknown", "filedAt": filed_at, "verifiedby": verifiedby}
         try:
             collection.insert_one(provider_dict)
         except Exception as e:
@@ -172,7 +184,7 @@ def bot():
         if success:
             msg = resp.message("Thanks for providing information\n")
             verified_at = get_verified_at(filed_at)
-            provider_res = "Name: {}\nContact Number: {}\nAddress: {}\nQuantity: {}\nVerified At: {}\n\n".format(name, provider_contact, address if address else location, quantity, verified_at)
+            provider_res = "Name: {}\nContact Number: {}\nAddress: {}\nQuantity: {}\nVerified At: {}\n\n".format(name, provider_contact, address if address else location, quantity if quantity else "Unknown", verified_at)
             msg.body(provider_res)
         else:
             msg = resp.message("There is some issue in data feed.\n")
