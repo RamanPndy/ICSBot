@@ -3,11 +3,11 @@ import requests, os, uuid
 from twilio.twiml.messaging_response import MessagingResponse
 import dialogflow
 from google.api_core.exceptions import InvalidArgument
-from datetime import datetime
 import pymongo
 import urllib
+from datetime import datetime
 
-from utils import get_provider_data
+from utils import get_provider_data, current_milli_time, get_verified_at
 
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = 'icsbotsa.json'
 
@@ -24,7 +24,7 @@ collection = db.ics
 
 app = Flask(__name__)
 
-entities = {"oxygen cylinder": "Oxygen%20Cylinder", "oxygen": "Oxygen", "icu": "ICU", "icu bed": "ICU%20Bed", "medicine": "Medicine", "plasma": "Plasma", "hospital bed": "Hospital%20Bed", "hospital": "Hospital", "food":"Homemade%20Food" }
+entities = {"oxygen cylinder": "Oxygen%20Cylinder", "oxygen": "Oxygen", "oxygen refilling": "Oxygen%20Refilling", "icu": "ICU", "icu bed": "ICU%20Bed", "medicine": "Medicine", "plasma": "Plasma", "hospital bed": "Hospital%20Bed", "hospital": "Hospital", "food":"Homemade%20Food" }
 cities = {"kanpur": "Kanpur,%20Uttar%20Pradesh", "varanasi":"Varanasi,%20Uttar%20Pradesh", "banaras":"Varanasi,%20Uttar%20Pradesh", "lucknow": "Lucknow,%20Uttar%20Pradesh", "delhi": "Delhi", "mumbai": "Mumbai"}
 
 @app.route('/', methods=['GET'])
@@ -96,16 +96,17 @@ def bot():
             doc_id = str(uuid.uuid4())
             provider_name, provider_contact, filed_at, quantity, address = get_provider_data(newdata)
             provider_dict = {"entity": entity, "location": location, "provider_name": provider_name, "provider_contact": provider_contact, "provider_address": address, "quantity": quantity, "filedAt": filed_at}
-            collection.insert_one(provider_dict)
+            try:
+                collection.insert_one(provider_dict)
+            except Exception as e:
+                print (e)
 
         provider_details = []
         for provider in providers_data:
             provider_name, provider_contact, filed_at, quantity, address = get_provider_data(provider)
-            if provider_name and provider_contact and filed_at:
-                verifieddt = datetime.strptime(filed_at, '%Y-%m-%dT%H:%M:%S.%f%z')
-                verified_at = f'{verifieddt:%d/%m/%Y %H:%M:%S}'
-                provider_res = "Name: {}\nContact Number: {}\nAddress: {}\nQuantity: {}\nVerified At: {}\n\n".format(provider_name, provider_contact, address, quantity, verified_at)
-                provider_details.append(provider_res)
+            verified_at = get_verified_at(filed_at)
+            provider_res = "Name: {}\nContact Number: {}\nAddress: {}\nQuantity: {}\nVerified At: {}\n\n".format(provider_name if provider_name else "Unavailable", provider_contact if provider_contact else "Unavailable", address if address else "Unavailable", quantity if quantity else "Unavailable", verified_at)
+            provider_details.append(provider_res)
 
         # print("Query text:", response.query_result.query_text)
         # print("Detected intent:", response.query_result.intent.display_name)
@@ -125,6 +126,7 @@ def bot():
     else:
         name = query_fields['name'].string_value
         location = query_fields['location'].string_value
+        address = query_fields['address'].string_value
         entity = query_fields['entity'].string_value
         provider_contact = query_fields['contact'].string_value
         quantity = query_fields['quantity'].string_value
@@ -140,26 +142,40 @@ def bot():
                 "quantity":quantity,
                 "city":loc,
                 "provider_name":name,
-                "provider_address":"",
-                "provider_contact":provider_contact,
+                "provider_address":address if address else "Unavailable",
+                "provider_contact":provider_contact if provider_contact else "Unavailable",
                 "link":"",
                 "filedAt":current_milli_time(),
                 "location":"0,0"
             }
 
-        qry_res = requests.post(ics_qry, data = feed_data)
+        success = True
+        try:
+            qry_res = requests.post(ics_qry, data = feed_data)
+        except Exception as e:
+            print (e)
+            success = False
+
         qry_res_data = qry_res.json()
         print(qry_res_data)
 
         filed_at = datetime.utcfromtimestamp(feed_data["filedAt"]/1000).isoformat()
 
-        provider_dict = {"entity": entity, "location": location, "provider_name": name, "provider_contact": contact, "provider_address": loc, "quantity": quantity, "filedAt": filed_at, "verifiedby": verifiedby}
-        collection.insert_one(provider_dict)
+        provider_dict = {"entity": entity, "location": location, "provider_name": name, "provider_contact": provider_contact, "provider_address": address if address else loc, "quantity": quantity, "filedAt": filed_at, "verifiedby": verifiedby}
+        try:
+            collection.insert_one(provider_dict)
+        except Exception as e:
+            print(e)
+            success = False
 
         resp = MessagingResponse()
-        msg = resp.message("Thanks for providing information\n")
-        provider_res = "Name: {}\nContact Number: {}\nAddress: {}\nQuantity: {}\nVerified At: {}\n\n".format(name, provider_contact, location, quantity, filed_at)
-        msg.body(provider_res)
+        if success:
+            msg = resp.message("Thanks for providing information\n")
+            verified_at = get_verified_at(filed_at)
+            provider_res = "Name: {}\nContact Number: {}\nAddress: {}\nQuantity: {}\nVerified At: {}\n\n".format(name, provider_contact, address if address else location, quantity, verified_at)
+            msg.body(provider_res)
+        else:
+            msg = resp.message("There is some issue in data feed.\n")
         return str(resp)
 
 @app.route('/fulfillment', methods=['POST'])
