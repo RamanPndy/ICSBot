@@ -7,7 +7,7 @@ import pymongo
 import urllib
 from datetime import datetime
 
-from utils import get_provider_data, current_milli_time, get_verified_at
+from utils import get_provider_data, current_milli_time, get_verified_at, get_data_from_field
 
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = 'icsbotsa.json'
 
@@ -139,7 +139,7 @@ def bot():
         name = query_fields['name'].string_value
         location = query_fields['location'].string_value
         address = query_fields['address'].string_value
-        entity = query_fields['entity'].string_value
+        entity = get_data_from_field(query_fields, 'entity')
         provider_contact = query_fields['contact'].string_value
         quantity = query_fields['quantity'].string_value
         verifiedby = query_fields['verifiedby'].string_value
