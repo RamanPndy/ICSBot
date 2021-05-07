@@ -34,3 +34,17 @@ def get_provider_data(provider):
     elif name and provider_name:
         provider = name + " OR " + provider_name
     return provider, provider_contact.replace("\n", ""), filedAt, quantity, address
+
+def get_entities_and_cities():
+    entities = {
+        "oxygen cylinder": "Oxygen%20Cylinder", "oxygen": "Oxygen", "oxygen concentrator": "Oxygen Concentrator", 
+         "oxygen refilling": "Oxygen%20Refilling",  "oxygen cylinder refilling": "Oxygen%20Refilling", 
+         "oxygen bed": "Oxygen Bed", "icu": "ICU", "icu bed": "ICU%20Bed", "medicine": "Medicine", "plasma": "Plasma", 
+         "hospital bed": "Hospital%20Bed", "hospital": "Hospital", "food":"Homemade%20Food" , 
+         "fabiflu": "Fabiflu", "ambulance": "Ambulance", "cab": "cab"}
+
+    cities = {"kanpur": "Kanpur,%20Uttar%20Pradesh", "varanasi":"Varanasi,%20Uttar%20Pradesh", 
+        "banaras":"Varanasi,%20Uttar%20Pradesh", "lucknow": "Lucknow,%20Uttar%20Pradesh", 
+        "delhi": "New%20Delhi,%20Delhi", "mumbai": "Mumbai,%20Maharashtra", "bangalore": "Bangalore", 
+        "bengaluru": "Bangalore", "kolkata": "Kolkata", "hyderabad": "Hyderabad"}
+    return entities, cities

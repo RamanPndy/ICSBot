@@ -7,7 +7,7 @@ import pymongo
 import urllib
 from datetime import datetime
 
-from utils import get_provider_data, current_milli_time, get_verified_at, get_data_from_field
+from utils import get_provider_data, current_milli_time, get_verified_at, get_data_from_field, get_entities_and_cities
 
 APPPORT = os.environ.get('PORT')
 
@@ -24,16 +24,7 @@ collection = db.ics
 
 app = Flask(__name__)
 
-entities = {
-    "oxygen cylinder": "Oxygen%20Cylinder", "oxygen": "Oxygen",  "oxygen concentrator": "Oxygen Concentrator", 
-     "oxygen refilling": "Oxygen%20Refilling",  "oxygen cylinder refilling": "Oxygen%20Refilling", 
-     "icu": "ICU", "icu bed": "ICU%20Bed", "medicine": "Medicine", "plasma": "Plasma", 
-     "hospital bed": "Hospital%20Bed", "hospital": "Hospital", "food":"Homemade%20Food" , 
-     "fabiflu": "Fabiflu", "ambulance": "Ambulance", "cab": "cab"}
-cities = {"kanpur": "Kanpur,%20Uttar%20Pradesh", "varanasi":"Varanasi,%20Uttar%20Pradesh", 
-    "banaras":"Varanasi,%20Uttar%20Pradesh", "lucknow": "Lucknow,%20Uttar%20Pradesh", 
-    "delhi": "New%20Delhi,%20Delhi", "mumbai": "Mumbai,%20Maharashtra", "bangalore": "Bangalore", 
-    "bengaluru": "Bangalore", "kolkata": "Kolkata"}
+entities, cities = get_entities_and_cities()
 
 @app.route('/', methods=['GET'])
 def welcome():
