@@ -24,7 +24,7 @@ collection = db.ics
 
 app = Flask(__name__)
 
-entities, cities = get_entities_and_cities()
+entities, cities = get_entities_and_cities(db.entitiesandcities)
 
 @app.route('/', methods=['GET'])
 def welcome():
