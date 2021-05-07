@@ -24,8 +24,16 @@ collection = db.ics
 
 app = Flask(__name__)
 
-entities = {"oxygen cylinder": "Oxygen%20Cylinder", "oxygen": "Oxygen", "oxygen refilling": "Oxygen%20Refilling", "icu": "ICU", "icu bed": "ICU%20Bed", "medicine": "Medicine", "plasma": "Plasma", "hospital bed": "Hospital%20Bed", "hospital": "Hospital", "food":"Homemade%20Food" , "fabiflu": "Fabiflu", "ambulance": "Ambulance", "cab": "cab"}
-cities = {"kanpur": "Kanpur,%20Uttar%20Pradesh", "varanasi":"Varanasi,%20Uttar%20Pradesh", "banaras":"Varanasi,%20Uttar%20Pradesh", "lucknow": "Lucknow,%20Uttar%20Pradesh", "delhi": "New%20Delhi,%20Delhi", "mumbai": "Mumbai,%20Maharashtra"}
+entities = {
+    "oxygen cylinder": "Oxygen%20Cylinder", "oxygen": "Oxygen",  "oxygen concentrator": "Oxygen Concentrator", 
+     "oxygen refilling": "Oxygen%20Refilling",  "oxygen cylinder refilling": "Oxygen%20Refilling", 
+     "icu": "ICU", "icu bed": "ICU%20Bed", "medicine": "Medicine", "plasma": "Plasma", 
+     "hospital bed": "Hospital%20Bed", "hospital": "Hospital", "food":"Homemade%20Food" , 
+     "fabiflu": "Fabiflu", "ambulance": "Ambulance", "cab": "cab"}
+cities = {"kanpur": "Kanpur,%20Uttar%20Pradesh", "varanasi":"Varanasi,%20Uttar%20Pradesh", 
+    "banaras":"Varanasi,%20Uttar%20Pradesh", "lucknow": "Lucknow,%20Uttar%20Pradesh", 
+    "delhi": "New%20Delhi,%20Delhi", "mumbai": "Mumbai,%20Maharashtra", "bangalore": "Bangalore", 
+    "bengaluru": "Bangalore", "kolkata": "Kolkata"}
 
 @app.route('/', methods=['GET'])
 def welcome():
@@ -137,7 +145,7 @@ def bot():
         return str(resp)
     else:
         name = query_fields['name'].string_value
-        location = query_fields['location'].string_value
+        location = get_data_from_field(query_fields, 'location')
         address = query_fields['address'].string_value
         entity = get_data_from_field(query_fields, 'entity')
         provider_contact = query_fields['contact'].string_value
