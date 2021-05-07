@@ -9,8 +9,6 @@ from datetime import datetime
 
 from utils import get_provider_data, current_milli_time, get_verified_at, get_data_from_field
 
-# os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = 'icsbotsa.json'
-
 APPPORT = os.environ.get('PORT')
 
 PROJECT_ID = os.environ.get('PROJECTID')
@@ -26,17 +24,17 @@ collection = db.ics
 
 app = Flask(__name__)
 
-entities = {"oxygen cylinder": "Oxygen%20Cylinder", "oxygen": "Oxygen", "oxygen refilling": "Oxygen%20Refilling", "icu": "ICU", "icu bed": "ICU%20Bed", "medicine": "Medicine", "plasma": "Plasma", "hospital bed": "Hospital%20Bed", "hospital": "Hospital", "food":"Homemade%20Food" , "fabiflu": "Fabiflu", "ambulance": "Ambulance"}
+entities = {"oxygen cylinder": "Oxygen%20Cylinder", "oxygen": "Oxygen", "oxygen refilling": "Oxygen%20Refilling", "icu": "ICU", "icu bed": "ICU%20Bed", "medicine": "Medicine", "plasma": "Plasma", "hospital bed": "Hospital%20Bed", "hospital": "Hospital", "food":"Homemade%20Food" , "fabiflu": "Fabiflu", "ambulance": "Ambulance", "cab": "cab"}
 cities = {"kanpur": "Kanpur,%20Uttar%20Pradesh", "varanasi":"Varanasi,%20Uttar%20Pradesh", "banaras":"Varanasi,%20Uttar%20Pradesh", "lucknow": "Lucknow,%20Uttar%20Pradesh", "delhi": "New%20Delhi,%20Delhi", "mumbai": "Mumbai,%20Maharashtra"}
 
 @app.route('/', methods=['GET'])
 def welcome():
     return "Welcome to ICS Bot App"
 
-def get_default_error_response():
+def get_default_error_response(msg, body):
     resp = MessagingResponse()
-    msg = resp.message("No data found for your query.\n")
-    msg.body("Please try with another query.\n")
+    msg = resp.message(msg)
+    msg.body(body)
     return str(resp)
 
 @app.route('/bot', methods=['POST'])
@@ -57,7 +55,7 @@ def bot():
     print("Response Parameters:", query_fields)
 
     if not query_fields:
-        return get_default_error_response()
+        return get_default_error_response("No data found for your query.\n", "Please try with another query.\n")
 
     if 'feed' not in incoming_msg:
         location = query_fields['location'].string_value
@@ -67,7 +65,7 @@ def bot():
         loc = cities.get(location, '')
 
         if not req and not loc:
-            return get_default_error_response()
+            return get_default_error_response("No data found for your query.\n", "Please try with another query.\n")
 
         ics_qry = "https://fierce-bayou-28865.herokuapp.com/api/v1/covid/?entity={}&city={}".format(req, loc)
         print (ics_qry)
@@ -148,6 +146,15 @@ def bot():
 
         req = entities.get(entity, '').replace("%20", " ")
         loc = cities.get(location, '').replace("%20", " ")
+
+        if not verifiedby:
+            return get_default_error_response("Invalid query.\n", "Please provide verified by.\n")
+
+        if not req:
+            return get_default_error_response("Invalid query.\n", "Please provide entity.\n")
+        
+        if not location:
+            return get_default_error_response("Invalid query.\n", "Please provide location.\n")
 
         ics_qry = "https://fierce-bayou-28865.herokuapp.com/api/v1/covid/nootp"
         feed_data = {

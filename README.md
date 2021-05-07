@@ -19,4 +19,9 @@ Firebase Private Key : icsbot-firebase.json<br>
 Dialogflow Service Account Key : icsbotsa.json<br>
 
 To build the application run <b>./build.sh</b> which will build the docker image of the application. <br>
-To run the application run <b>./run.sh <project_id> <keys_path></b> which will run the dockerized application on port <b>5000</b>
+To run the application run <b>./run.sh <project_id> <keys_path></b> which will run the deploy dockerized application on Heroku. Make sure to set config vars for the Heroku app.
+heroku config:set PROJECTID=<dialogflow_project_id>
+heroku config:set DBUSER=<mongodb_user>
+heroku config:set DBPASS=<mongodb_pass>
+heroku config:set PORT=<application_port>
+heroku config:set GOOGLE_APPLICATION_CREDENTIALS=icsbotsa.json
