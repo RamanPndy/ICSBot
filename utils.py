@@ -1,4 +1,5 @@
 import time
+import re
 from datetime import datetime
 
 def current_milli_time():
@@ -40,3 +41,7 @@ def get_entities_and_cities(collection):
     entities = dbresults.get('entities')
     cities = dbresults.get('cities')
     return entities, cities
+
+def get_numbers_str(mixed_str):
+    temp = re.findall(r'\d+', mixed_str)
+    return ",".join(temp)

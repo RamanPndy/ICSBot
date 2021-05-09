@@ -10,7 +10,7 @@ from datetime import datetime
 from fpdf import FPDF
 from google.cloud import storage
 
-from utils import get_provider_data, current_milli_time, get_verified_at, get_data_from_field, get_entities_and_cities
+from utils import get_provider_data, current_milli_time, get_verified_at, get_data_from_field, get_entities_and_cities, get_numbers_str
 
 APPPORT = os.environ.get('PORT')
 
@@ -190,8 +190,13 @@ def bot():
         quantity = query_fields['quantity'].string_value
         verifiedby = query_fields['verifiedby'].string_value
 
+        contact_number = get_numbers_str(provider_contact)
+
         req = entities.get(entity, '').replace("%20", " ")
         loc = cities.get(location, '').replace("%20", " ")
+
+        if not contact_number:
+            return get_default_error_response("Invalid query.\n", "Please provide contact number.\n")
 
         if not entity:
             return get_default_error_response("Invalid query.\n", "Please provide entity.\n")
@@ -209,19 +214,19 @@ def bot():
         feed_data = {
                 "name":name,
                 "entity":req,
-                "quantity":quantity if quantity else "Unknown",
+                "quantity":quantity if quantity else None,
                 "city":loc,
                 "provider_name":name,
                 "provider_address":address if address else "Unavailable",
-                "provider_contact":provider_contact if provider_contact else "Unavailable",
+                "provider_contact":contact_number,
                 "link":"",
                 "filedAt":current_milli_time(),
                 "location":"0,0"
             }
-
+        logging.debug("data to be sent to ICS : {}".format(feed_data))
         success = True
         try:
-            qry_res = requests.post(ics_qry, data = feed_data)
+            qry_res = requests.post(ics_qry, json=feed_data)
         except Exception as e:
             logging.error (e)
             success = False
@@ -231,7 +236,7 @@ def bot():
 
         filed_at = datetime.utcfromtimestamp(feed_data["filedAt"]/1000).isoformat()
 
-        provider_dict = {"entity": entity, "location": location, "provider_name": name, "provider_contact": provider_contact, "provider_address": address if address else loc, "quantity": quantity if quantity else "Unknown", "filedAt": filed_at, "verifiedby": verifiedby}
+        provider_dict = {"entity": entity, "location": location, "provider_name": name, "provider_contact": contact_number, "provider_address": address if address else loc, "quantity": quantity if quantity else "Unknown", "filedAt": filed_at, "verifiedby": verifiedby}
         try:
             collection.insert_one(provider_dict)
         except Exception as e:
@@ -242,7 +247,7 @@ def bot():
         if success:
             msg = resp.message("Thanks for providing information\n")
             verified_at = get_verified_at(filed_at)
-            provider_res = "Name: {}\nContact Number: {}\nAddress: {}\nQuantity: {}\nVerified At: {}\n\n".format(name, provider_contact, address if address else location, quantity if quantity else "Unknown", verified_at)
+            provider_res = "Name: {}\nContact Number: {}\nAddress: {}\nQuantity: {}\nVerified At: {}\n\n".format(name, contact_number, address if address else location, quantity if quantity else "Unknown", verified_at)
             msg.body(provider_res)
         else:
             msg = resp.message("There is some issue in data feed.\n")
