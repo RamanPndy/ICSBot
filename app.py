@@ -6,6 +6,8 @@ from google.api_core.exceptions import InvalidArgument
 import pymongo
 import urllib
 from datetime import datetime
+from fpdf import FPDF
+from google.cloud import storage
 
 from utils import get_provider_data, current_milli_time, get_verified_at, get_data_from_field, get_entities_and_cities
 
@@ -23,6 +25,9 @@ db = client.icsdb
 collection = db.ics
 
 app = Flask(__name__)
+
+google_storage_client = storage.Client.from_service_account_json(json_credentials_path='icsstoragesa.json')
+bucket = google_storage_client.get_bucket('icsbot')
 
 entities, cities = get_entities_and_cities(db.entitiesandcities)
 
@@ -123,16 +128,47 @@ def bot():
         # print("Detected intent:", response.query_result.intent.display_name)
         # print("Detected intent confidence:", response.query_result.intent_detection_confidence)
         # print("Fulfillment text:", response.query_result.fulfillment_text)
+        media_type = False
+        if len(provider_details) < 5:
+            ics_resp = ''.join(provider_details)
+            print (ics_resp)
+        else:
+            pdf_name = "{}_{}.pdf".format(entity.replace(" ", "_"), location.replace(" ", "_"))
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Arial", size = 15)
+            pdf.cell(200, 10, txt = "{}\n\n".format(incoming_msg), ln = 1, align = 'C')
+            for msg in provider_details:
+                msg_data = [x for x in msg.split("\n") if x]
+                name, contact_num, address, qty, verifiedAt = msg_data
+                pdf.cell(200, 5, txt = name, ln=1)
+                pdf.cell(200, 5, txt = contact_num, ln=1)
+                pdf.cell(200, 5, txt = address, ln=1)
+                pdf.cell(200, 5, txt = qty, ln=1)
+                pdf.cell(200, 5, txt = verifiedAt, ln=1)
+                pdf.cell(200, 5, txt = "-----------------------------------------------------------------------", ln=1)
+                pdf.cell(200, 5, txt = "-----------------------------------------------------------------------", ln=1)
+            pdf.output(pdf_name)
 
-        ics_resp = ''.join(provider_details[:10])
-        print (ics_resp)
+            object_name_in_gcs_bucket = bucket.blob(pdf_name)
+            object_name_in_gcs_bucket.upload_from_filename(pdf_name)
+            object_name_in_gcs_bucket.make_public()
+            upload_res = object_name_in_gcs_bucket.public_url
+            if upload_res:
+                ics_resp = upload_res
+                print (ics_resp)
+                media_type = True
+                os.remove(pdf_name)
 
         resp = MessagingResponse()
         if ics_resp:
             msg = resp.message("Below are some resources we have found\n")
         else:
             msg = resp.message("No data found. Please try with different query.\n")
-        msg.body(ics_resp)
+        if media_type:
+            msg.media(ics_resp)
+        else:
+            msg.body(ics_resp)
         return str(resp)
     else:
         name = query_fields['name'].string_value

@@ -16,11 +16,12 @@ Backend is Python Based Flask framework integrated with Whatsapp via Twillio and
 
 To run the application following files are needed:
 Dialogflow Service Account Key : icsbotsa.json<br>
+Google Cloud Strogae Service Account Key : icsstoragesa.json<br>
 
 To build the application run <b>./build.sh</b> which will build the docker image of the application. <br>
-To run the application run <b>./run.sh</b> which will run the deploy dockerized application on Heroku. Make sure to set config vars for the Heroku app.
-heroku config:set PROJECTID=<dialogflow_project_id>
-heroku config:set DBUSER=<mongodb_user>
-heroku config:set DBPASS=<mongodb_pass>
-heroku config:set PORT=<application_port>
+To run the application run <b>./run.sh</b> which will run the deploy dockerized application on Heroku. Make sure to set config vars for the Heroku app.<br>
+heroku config:set PROJECTID=<dialogflow_project_id><br>
+heroku config:set DBUSER=<mongodb_user><br>
+heroku config:set DBPASS=<mongodb_pass><br>
+heroku config:set PORT=<application_port><br>
 heroku config:set GOOGLE_APPLICATION_CREDENTIALS=icsbotsa.json
