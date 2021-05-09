@@ -5,6 +5,7 @@ import dialogflow
 from google.api_core.exceptions import InvalidArgument
 import pymongo
 import urllib
+import logging
 from datetime import datetime
 from fpdf import FPDF
 from google.cloud import storage
@@ -29,6 +30,8 @@ app = Flask(__name__)
 google_storage_client = storage.Client.from_service_account_json(json_credentials_path='icsstoragesa.json')
 bucket = google_storage_client.get_bucket('icsbot')
 
+logging.basicConfig(level=logging.DEBUG)
+
 entities, cities = get_entities_and_cities(db.entitiesandcities)
 
 @app.route('/', methods=['GET'])
@@ -44,7 +47,7 @@ def get_default_error_response(msg, body):
 @app.route('/bot', methods=['POST'])
 def bot():
     incoming_msg = request.values.get('Body', '').lower()
-    print(incoming_msg)
+    logging.debug(incoming_msg)
 
     session_client = dialogflow.SessionsClient()
     session = session_client.session_path(PROJECT_ID, SESSION_ID)
@@ -56,7 +59,7 @@ def bot():
         raise
 
     query_fields = response.query_result.parameters.fields
-    print("Response Parameters:", query_fields)
+    logging.debug("Response Parameters: {}".format(query_fields))
 
     if not query_fields:
         return get_default_error_response("No data found for your query.\n", "Please try with another query.\n")
@@ -72,11 +75,11 @@ def bot():
             return get_default_error_response("No data found for your query.\n", "Please try with another query.\n")
 
         ics_qry = "https://fierce-bayou-28865.herokuapp.com/api/v1/covid/?entity={}&city={}".format(req, loc)
-        print (ics_qry)
+        logging.debug (ics_qry)
 
         qry_res = requests.get(ics_qry)
         qry_res_data = qry_res.json()
-        print (qry_res_data)
+        logging.debug (qry_res_data)
 
         qry_providers = qry_res_data["data"]["covid"]
         dedupe_providers = { each['provider_contact'] : each for each in qry_providers }.values()
@@ -115,7 +118,7 @@ def bot():
             try:
                 collection.insert_one(provider_dict)
             except Exception as e:
-                print (e)
+                logging.error(e)
 
         provider_details = []
         for provider in providers_data:
@@ -131,7 +134,7 @@ def bot():
         media_type = False
         if len(provider_details) < 5:
             ics_resp = ''.join(provider_details)
-            print (ics_resp)
+            logging.debug (ics_resp)
         else:
             pdf_name = "{}_{}.pdf".format(entity.replace(" ", "_"), location.replace(" ", "_"))
             pdf = FPDF()
@@ -156,7 +159,7 @@ def bot():
             upload_res = object_name_in_gcs_bucket.public_url
             if upload_res:
                 ics_resp = upload_res
-                print (ics_resp)
+                logging.debug (ics_resp)
                 media_type = True
                 os.remove(pdf_name)
 
@@ -172,15 +175,26 @@ def bot():
         return str(resp)
     else:
         name = query_fields['name'].string_value
-        location = get_data_from_field(query_fields, 'location')
+        try:
+            location = get_data_from_field(query_fields, 'location')
+        except Exception as e:
+            logging.error (e)
+            location = query_fields['location'].string_value
         address = query_fields['address'].string_value
-        entity = get_data_from_field(query_fields, 'entity')
+        try:
+            entity = get_data_from_field(query_fields, 'entity')
+        except Exception as e:
+            logging.error (e)
+            entity = query_fields['entity'].string_value
         provider_contact = query_fields['contact'].string_value
         quantity = query_fields['quantity'].string_value
         verifiedby = query_fields['verifiedby'].string_value
 
         req = entities.get(entity, '').replace("%20", " ")
         loc = cities.get(location, '').replace("%20", " ")
+
+        if not entity:
+            return get_default_error_response("Invalid query.\n", "Please provide entity.\n")
 
         if not verifiedby:
             return get_default_error_response("Invalid query.\n", "Please provide verified by.\n")
@@ -209,11 +223,11 @@ def bot():
         try:
             qry_res = requests.post(ics_qry, data = feed_data)
         except Exception as e:
-            print (e)
+            logging.error (e)
             success = False
 
         qry_res_data = qry_res.json()
-        print(qry_res_data)
+        logging.debug(qry_res_data)
 
         filed_at = datetime.utcfromtimestamp(feed_data["filedAt"]/1000).isoformat()
 
@@ -221,7 +235,7 @@ def bot():
         try:
             collection.insert_one(provider_dict)
         except Exception as e:
-            print(e)
+            logging.error(e)
             success = False
 
         resp = MessagingResponse()
