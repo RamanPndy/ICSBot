@@ -1,28 +1,20 @@
 from flask import Flask, request
-import requests, os, uuid
+import requests, os
 from twilio.twiml.messaging_response import MessagingResponse
-import dialogflow
 from google.api_core.exceptions import InvalidArgument
-import pymongo
-import urllib
 import logging
+import threading
 from datetime import datetime
 from fpdf import FPDF
 from google.cloud import storage
 
-from utils import get_provider_data, current_milli_time, get_verified_at, get_data_from_field, get_entities_and_cities, get_numbers_str
+from utils import current_milli_time, get_verified_at, get_data_from_field, get_entities_and_cities, get_numbers_str, get_db_connection
+from dataflow import get_query_fields, get_entity_location_from_query_fields, get_unique_providers_from_ics, get_db_results, get_provider_details
+from telegrambot import main
 
 APPPORT = os.environ.get('PORT')
 
-PROJECT_ID = os.environ.get('PROJECTID')
-DIALOGFLOW_LANGUAGE_CODE = 'en'
-SESSION_ID = 'me'
-
-db_username = urllib.parse.quote_plus(os.environ.get('DBUSER'))
-db_pass = urllib.parse.quote_plus(os.environ.get('DBPASS'))
-
-client = pymongo.MongoClient("mongodb+srv://{}:{}@cluster0.bsugd.mongodb.net/icsdb?retryWrites=true&w=majority".format(db_username, db_pass))
-db = client.icsdb
+db = get_db_connection()
 collection = db.ics
 
 app = Flask(__name__)
@@ -33,6 +25,8 @@ bucket = google_storage_client.get_bucket('icsbot')
 logging.basicConfig(level=logging.DEBUG)
 
 entities, cities = get_entities_and_cities(db.entitiesandcities)
+
+TELEGRAM_API_TOKEN = os.environ.get("TOKEN")
 
 @app.route('/', methods=['GET'])
 def welcome():
@@ -49,83 +43,22 @@ def bot():
     incoming_msg = request.values.get('Body', '').lower()
     logging.debug(incoming_msg)
 
-    session_client = dialogflow.SessionsClient()
-    session = session_client.session_path(PROJECT_ID, SESSION_ID)
-    text_input = dialogflow.types.TextInput(text=incoming_msg, language_code=DIALOGFLOW_LANGUAGE_CODE)
-    query_input = dialogflow.types.QueryInput(text=text_input)
-    try:
-        response = session_client.detect_intent(session=session, query_input=query_input)
-    except InvalidArgument:
-        raise
-
-    query_fields = response.query_result.parameters.fields
-    logging.debug("Response Parameters: {}".format(query_fields))
+    query_fields = get_query_fields(incoming_msg)
 
     if not query_fields:
         return get_default_error_response("No data found for your query.\n", "Please try with another query.\n")
 
     if 'feed' not in incoming_msg:
-        location = query_fields['location'].string_value
-        entity = query_fields['entity'].string_value
-
-        req = entities.get(entity, '')
-        loc = cities.get(location, '')
+        req, loc, entity, location = get_entity_location_from_query_fields(query_fields, entities, cities)
 
         if not req and not loc:
             return get_default_error_response("No data found for your query.\n", "Please try with another query.\n")
 
-        ics_qry = "https://fierce-bayou-28865.herokuapp.com/api/v1/covid/?entity={}&city={}".format(req, loc)
-        logging.debug (ics_qry)
+        unique_providers = get_unique_providers_from_ics(req, loc)
 
-        qry_res = requests.get(ics_qry)
-        qry_res_data = qry_res.json()
-        logging.debug (qry_res_data)
-
-        qry_providers = qry_res_data["data"]["covid"]
-        dedupe_providers = { each['provider_contact'] : each for each in qry_providers }.values()
-        unique_providers = list(dedupe_providers)[::-1]
-
-        dbresults = collection.find({
-            '$and': [
-                {'entity': entity},
-                {'location': location}
-            ]
-        })
-        dbfiltereddata = []
-        for dbr in dbresults:
-            dbfiltereddata.append(dbr)
+        dbfiltereddata = get_db_results(collection, entity, location)
         
-        providers_data = []
-        new_data_to_be_added_in_db = []
-        if dbfiltereddata and not unique_providers:
-            providers_data = dbfiltereddata
-        elif unique_providers and not dbfiltereddata:
-            providers_data = unique_providers
-            new_data_to_be_added_in_db = unique_providers
-        elif unique_providers and dbfiltereddata:
-            providers_data = dbfiltereddata
-            dbdatacontacts = [dbd.get('provider_contact') for dbd in dbfiltereddata]
-            for pd in unique_providers:
-                pdc = pd.get("provider_contact", "")
-                if pdc not in dbdatacontacts:
-                    new_data_to_be_added_in_db.append(pd)
-                    providers_data.append(pd)
-        
-        for newdata in new_data_to_be_added_in_db:
-            doc_id = str(uuid.uuid4())
-            provider_name, provider_contact, filed_at, quantity, address = get_provider_data(newdata)
-            provider_dict = {"entity": entity, "location": location, "provider_name": provider_name, "provider_contact": provider_contact, "provider_address": address, "quantity": quantity if quantity else "Unknown", "filedAt": filed_at}
-            try:
-                collection.insert_one(provider_dict)
-            except Exception as e:
-                logging.error(e)
-
-        provider_details = []
-        for provider in providers_data:
-            provider_name, provider_contact, filed_at, quantity, address = get_provider_data(provider)
-            verified_at = get_verified_at(filed_at)
-            provider_res = "Name: {}\nContact Number: {}\nAddress: {}\nQuantity: {}\nVerified At: {}\n\n".format(provider_name if provider_name else "Unavailable", provider_contact if provider_contact else "Unavailable", address if address else "Unavailable", quantity if quantity else "Unknown", verified_at)
-            provider_details.append(provider_res.replace("-1", "Unknown"))
+        provider_details = get_provider_details(dbfiltereddata, unique_providers, entity, location)
 
         # print("Query text:", response.query_result.query_text)
         # print("Detected intent:", response.query_result.intent.display_name)
@@ -258,4 +191,6 @@ def fulfillment():
     return "working"
 
 if __name__ == '__main__':
+    telegram_bot_thread = threading.Thread(target=main, args=(TELEGRAM_API_TOKEN,))
+    telegram_bot_thread.start()
     app.run(host='0.0.0.0', port=int(APPPORT), threaded=True)
