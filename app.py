@@ -184,7 +184,7 @@ def bot():
 
         filed_at = datetime.utcfromtimestamp(feed_data["filedAt"]/1000).isoformat()
 
-        provider_dict = {"entity": entity, "location": location, "provider_name": name, "provider_contact": contact_number, "provider_address": address if address else loc, "quantity": quantity if quantity else "Unknown", "filedAt": filed_at, "verifiedby": verifiedby}
+        provider_dict = {"entity": entity, "location": location, "provider_name": name, "provider_contact": contact_number, "contact": contact_number, "provider_address": address if address else loc, "quantity": quantity if quantity else "Unknown", "filedAt": filed_at, "verifiedby": verifiedby}
         try:
             collection.update_one({"provider_contact": contact_number}, {"$set": provider_dict}, upsert=True)
         except Exception as e:

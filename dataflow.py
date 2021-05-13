@@ -32,14 +32,24 @@ def get_unique_providers_from_ics(req, loc):
     logging.debug (qry_res_data)
     
     qry_providers = qry_res_data["data"]["covid"]
-    dedupe_providers = { each['provider_contact'] : each for each in qry_providers }.values()
+    each_dict = {}
+    for each in qry_providers:
+        provider_contact = each.get("provider_contact", "")
+        if not provider_contact:
+            provider_contact = each.get("contact", "")
+        if provider_contact:
+            each_dict['provider_contact'] = each
+
+    dedupe_providers = each_dict.values()
     unique_providers = list(dedupe_providers)[::-1]
     return unique_providers
 
 def get_provider_data(provider):
     name = provider.get("name", "")
     provider_name = provider.get("provider_name", "")
-    provider_contact = provider.get("provider_contact", "Unavailable")
+    provider_contact = provider.get("provider_contact", "")
+    if not provider_contact:
+        provider_contact = provider.get("contact", "")
     quantity = provider.get("quantity", "Unavailable")
     filedAt = provider.get("filedAt", "")
     address = provider.get("provider_address", "Unavailable")
@@ -65,6 +75,8 @@ def get_provider_details(dbfiltereddata, unique_providers, entity, location):
         dbdatacontacts = [dbd.get('provider_contact') for dbd in dbfiltereddata]
         for pd in unique_providers:
             pdc = pd.get("provider_contact", "")
+            if not pdc:
+                pdc = pd.get("contact", "")
             if pdc not in dbdatacontacts:
                 new_data_to_be_added_in_db.append(pd)
                 providers_data.append(pd)
@@ -72,7 +84,7 @@ def get_provider_details(dbfiltereddata, unique_providers, entity, location):
     for newdata in new_data_to_be_added_in_db:
         doc_id = str(uuid.uuid4())
         provider_name, provider_contact, filed_at, quantity, address = get_provider_data(newdata)
-        provider_dict = {"entity": entity, "location": location, "provider_name": provider_name, "provider_contact": provider_contact, "provider_address": address, "quantity": quantity if quantity else "Unknown", "filedAt": filed_at}
+        provider_dict = {"entity": entity, "location": location, "provider_name": provider_name, "provider_contact": provider_contact, "contact": provider_contact, "provider_address": address, "quantity": quantity if quantity else "Unknown", "filedAt": filed_at}
         try:
             collection.insert_one(provider_dict)
         except Exception as e:
