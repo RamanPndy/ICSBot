@@ -10,7 +10,7 @@ from google.cloud import storage
 from utils import current_milli_time, get_verified_at, get_data_from_field, get_numbers_str
 from dataflow import add_city, add_entity, get_query_fields, get_entity_location_from_query_fields, get_unique_providers_from_ics, get_provider_details
 from dialogflowhandler import get_dialogflow_response
-from dblayer import get_db_connection, get_entities_and_cities, get_db_results
+from dblayer import get_db_connection, get_entities_and_cities, get_db_results, entities, cities
 from telegrambot import main
 
 APPPORT = os.environ.get('PORT')
@@ -24,8 +24,6 @@ google_storage_client = storage.Client.from_service_account_json(json_credential
 bucket = google_storage_client.get_bucket('icsbot')
 
 logging.basicConfig(level=logging.DEBUG)
-
-entities, cities = get_entities_and_cities(db.entitiesandcities)
 
 TELEGRAM_API_TOKEN = os.environ.get("TOKEN")
 
@@ -58,7 +56,7 @@ def bot():
     if dialogflow_intent == "AddEntity":
         entity_name = add_entity(incoming_msg, db.entitiesandcities)
         entities[entity_name] = entity_name.capitalize()
-        return get_default_error_response("Success.\n", "Entity {} has been added successfully.".format(city_name))
+        return get_default_error_response("Success.\n", "Entity {} has been added successfully.".format(entity_name))
 
     query_fields = get_query_fields(incoming_msg)
 

@@ -2,7 +2,7 @@ import logging
 from telegram import Update
 from telegram.ext import Updater, CommandHandler, CallbackContext, MessageHandler, Filters
 
-from dblayer import get_db_connection, get_entities_and_cities, get_db_results
+from dblayer import get_db_connection, get_entities_and_cities, get_db_results, entities, cities
 from dataflow import add_city, add_entity, get_query_fields, get_entity_location_from_query_fields, get_unique_providers_from_ics, get_provider_details
 from dialogflowhandler import get_dialogflow_response
 
@@ -10,8 +10,6 @@ logging.basicConfig(level=logging.DEBUG)
 
 db = get_db_connection()
 collection = db.ics
-
-entities, cities = get_entities_and_cities(db.entitiesandcities)
 
 def get_incoming_msg(context):
     context_args = context.args

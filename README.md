@@ -23,5 +23,7 @@ To run the application run <b>./run.sh</b> which will run the deploy dockerized 
 heroku config:set PROJECTID=<dialogflow_project_id><br>
 heroku config:set DBUSER=<mongodb_user><br>
 heroku config:set DBPASS=<mongodb_pass><br>
+heroku config:set MEDREQ_ENTITY_UUID=<medreq_entity_uuid><br>
+heroku config:set LOCATION_ENTITY_UUID=<location_entity_uuid><br>
 heroku config:set PORT=<application_port><br>
 heroku config:set GOOGLE_APPLICATION_CREDENTIALS=icsbotsa.json

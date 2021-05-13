@@ -36,3 +36,6 @@ def update_db_entity(col, city="", entity=""):
         key = "entities.{}".format(entity)
         value = entity.capitalize()
     col.update({'name': "entitiesandcities"}, {'$set': {key: value}})
+
+db_conn = get_db_connection()
+entities, cities = get_entities_and_cities(db_conn.entitiesandcities)
