@@ -1,27 +1,15 @@
-import dialogflow
 import logging
-import os
 import requests
 import uuid
 
 from utils import get_verified_at
-
-PROJECT_ID = os.environ.get('PROJECTID')
-DIALOGFLOW_LANGUAGE_CODE = 'en'
-SESSION_ID = 'me'
+from dialogflowhandler import get_dialogflow_response, update_dialogflow_entity
+from dblayer import update_db_entity
 
 logging.basicConfig(level=logging.DEBUG)
 
 def get_query_fields(incoming_msg):
-    session_client = dialogflow.SessionsClient()
-    session = session_client.session_path(PROJECT_ID, SESSION_ID)
-    text_input = dialogflow.types.TextInput(text=incoming_msg, language_code=DIALOGFLOW_LANGUAGE_CODE)
-    query_input = dialogflow.types.QueryInput(text=text_input)
-    try:
-        response = session_client.detect_intent(session=session, query_input=query_input)
-    except InvalidArgument:
-        raise
-    
+    response = get_dialogflow_response(incoming_msg)
     query_fields = response.query_result.parameters.fields
     logging.debug("Response Parameters: {}".format(query_fields))
     return query_fields
@@ -47,18 +35,6 @@ def get_unique_providers_from_ics(req, loc):
     dedupe_providers = { each['provider_contact'] : each for each in qry_providers }.values()
     unique_providers = list(dedupe_providers)[::-1]
     return unique_providers
-
-def get_db_results(ics_collection, entity, location):
-    dbresults = ics_collection.find({
-        '$and': [
-            {'entity': entity},
-            {'location': location}
-        ]
-    })
-    dbfiltereddata = []
-    for dbr in dbresults:
-        dbfiltereddata.append(dbr)
-    return dbfiltereddata
 
 def get_provider_data(provider):
     name = provider.get("name", "")
@@ -109,3 +85,17 @@ def get_provider_details(dbfiltereddata, unique_providers, entity, location):
         provider_res = "Name: {}\nContact Number: {}\nAddress: {}\nQuantity: {}\nVerified At: {}\n\n".format(provider_name if provider_name else "Unavailable", provider_contact if provider_contact else "Unavailable", address if address else "Unavailable", quantity if quantity else "Unknown", verified_at)
         provider_details.append(provider_res.replace("-1", "Unknown"))
     return provider_details
+
+def add_city(incoming_msg, coll):
+    query_fields = get_query_fields(incoming_msg)
+    city_name = query_fields['city'].string_value
+    update_dialogflow_entity(city=city_name)
+    update_db_entity(coll, city=city_name)
+    return city_name
+
+def add_entity(incoming_msg, coll):
+    query_fields = get_query_fields(incoming_msg)
+    entity_name = query_fields['entity'].string_value
+    update_dialogflow_entity(entity=entity_name)
+    update_db_entity(coll, entity=entity_name)
+    return entity_name

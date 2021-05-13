@@ -1,15 +1,16 @@
 from flask import Flask, request
 import requests, os
 from twilio.twiml.messaging_response import MessagingResponse
-from google.api_core.exceptions import InvalidArgument
 import logging
 import threading
 from datetime import datetime
 from fpdf import FPDF
 from google.cloud import storage
 
-from utils import current_milli_time, get_verified_at, get_data_from_field, get_entities_and_cities, get_numbers_str, get_db_connection
-from dataflow import get_query_fields, get_entity_location_from_query_fields, get_unique_providers_from_ics, get_db_results, get_provider_details
+from utils import current_milli_time, get_verified_at, get_data_from_field, get_numbers_str
+from dataflow import add_city, add_entity, get_query_fields, get_entity_location_from_query_fields, get_unique_providers_from_ics, get_provider_details
+from dialogflowhandler import get_dialogflow_response
+from dblayer import get_db_connection, get_entities_and_cities, get_db_results
 from telegrambot import main
 
 APPPORT = os.environ.get('PORT')
@@ -42,6 +43,22 @@ def get_default_error_response(msg, body):
 def bot():
     incoming_msg = request.values.get('Body', '').lower()
     logging.debug(incoming_msg)
+
+    dialogflow_response = get_dialogflow_response(incoming_msg)
+    if not dialogflow_response:
+        return get_default_error_response("Invalid query.\n", "Please try with another query.\n")
+
+    dialogflow_intent = dialogflow_response.query_result.intent.display_name
+
+    if dialogflow_intent == "AddCity":
+        city_name = add_city(incoming_msg,db.entitiesandcities)
+        cities[city_name] = city_name.capitalize()
+        return get_default_error_response("Success.\n", "City {} has been added successfully.".format(city_name))
+
+    if dialogflow_intent == "AddEntity":
+        entity_name = add_entity(incoming_msg, db.entitiesandcities)
+        entities[entity_name] = entity_name.capitalize()
+        return get_default_error_response("Success.\n", "Entity {} has been added successfully.".format(city_name))
 
     query_fields = get_query_fields(incoming_msg)
 
@@ -152,9 +169,9 @@ def bot():
                 "provider_name":name,
                 "provider_address":address if address else "Unavailable",
                 "provider_contact":contact_number,
+                "contact": contact_number,
                 "link":"",
-                "filedAt":current_milli_time(),
-                "location":"0,0"
+                "filedAt":current_milli_time()
             }
         logging.debug("data to be sent to ICS : {}".format(feed_data))
         success = True
@@ -171,7 +188,7 @@ def bot():
 
         provider_dict = {"entity": entity, "location": location, "provider_name": name, "provider_contact": contact_number, "provider_address": address if address else loc, "quantity": quantity if quantity else "Unknown", "filedAt": filed_at, "verifiedby": verifiedby}
         try:
-            collection.insert_one(provider_dict)
+            collection.update_one({"provider_contact": contact_number}, {"$set": provider_dict}, upsert=True)
         except Exception as e:
             logging.error(e)
             success = False

@@ -2,8 +2,9 @@ import logging
 from telegram import Update
 from telegram.ext import Updater, CommandHandler, CallbackContext, MessageHandler, Filters
 
-from utils import get_db_connection, get_entities_and_cities
-from dataflow import get_query_fields, get_entity_location_from_query_fields, get_unique_providers_from_ics, get_provider_details, get_db_results
+from dblayer import get_db_connection, get_entities_and_cities, get_db_results
+from dataflow import add_city, add_entity, get_query_fields, get_entity_location_from_query_fields, get_unique_providers_from_ics, get_provider_details
+from dialogflowhandler import get_dialogflow_response
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -11,6 +12,12 @@ db = get_db_connection()
 collection = db.ics
 
 entities, cities = get_entities_and_cities(db.entitiesandcities)
+
+def get_incoming_msg(context):
+    context_args = context.args
+    incoming_query = " ".join(context_args)
+    logging.debug("Telegram Query : {}".format(incoming_query))
+    return incoming_query
 
 def get_default_error_response(update, error_msg):
     update.message.reply_text(error_msg)
@@ -20,11 +27,32 @@ def start(update, context):
     """Send a message when the command /start is issued."""
     update.message.reply_text('Hi from ICSBot :-)')
 
+def add(update, context):
+    """Add city/entity to dialogflow and db when the command /add is issued."""
+    incoming_query = get_incoming_msg(context)
+
+    dialogflow_response = get_dialogflow_response(incoming_msg)
+    if not dialogflow_response:
+        update.message.reply_text("Invalid query.\n", "Please try with another query.\n")
+        return
+
+    dialogflow_intent = dialogflow_response.query_result.intent.display_name
+
+    if dialogflow_intent == "AddCity":
+        city_name = add_city(incoming_msg, db.entitiesandcities)
+        cities[city_name] = city_name.capitalize()
+        update.message.reply_text("Success.\n", "City {} has been added successfully.".format(city_name))
+        return
+
+    if dialogflow_intent == "AddEntity":
+        entity_name = add_entity(incoming_msg, db.entitiesandcities)
+        entities[entity_name] = entity_name.capitalize()
+        update.message.reply_text("Success.\n", "Entity {} has been added successfully.".format(city_name))
+        return
+
 def query(update, context):
     """Send a message when the command /query is issued."""
-    context_args = context.args
-    incoming_query = " ".join(context_args)
-    logging.debug("Telegram Query : {}".format(incoming_query))
+    incoming_query = get_incoming_msg(context)
 
     query_fields = get_query_fields(incoming_query)
 
@@ -48,7 +76,7 @@ def query(update, context):
 
 def help(update, context):
     """Send a message when the command /help is issued."""
-    help_text = "Type /query <query> for example: /query hospital in kanpur to get relavant results. Type /feed <query> to feed data."
+    help_text = "Type /query <query> for example: /query hospital in kanpur to get relavant results. Type /feed <query> to feed data. Type /add <message> to add city or entity"
     update.message.reply_text(help_text)
 
 def error(update, context):
@@ -69,6 +97,7 @@ def main(api_token):
     dp.add_handler(CommandHandler("start", start))
     dp.add_handler(CommandHandler("help", help))
     dp.add_handler(CommandHandler("query", query))
+    dp.add_handler(CommandHandler("add", add))
 
     # log all errors
     dp.add_error_handler(error)
