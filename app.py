@@ -7,7 +7,7 @@ from datetime import datetime
 from fpdf import FPDF
 from google.cloud import storage
 
-from utils import current_milli_time, get_verified_at, get_numbers_str
+from utils import current_milli_time, get_verified_at, get_numbers_str, get_help_text
 from dataflow import add_city, add_entity, get_query_fields, get_entity_location_from_query_fields, get_unique_providers_from_ics, get_provider_details, get_feed_params,  post_data_to_ics
 from dialogflowhandler import get_dialogflow_response
 from dblayer import get_db_connection, get_entities_and_cities, get_db_results, entities, cities, update_feed_data_db
@@ -42,9 +42,14 @@ def bot():
     incoming_msg = request.values.get('Body', '').lower()
     logging.debug(incoming_msg)
 
+    if incoming_msg == "help":
+        help_text = get_help_text()
+        return get_default_error_response("Welcome to ICS Bot.\n", help_text)
+
     dialogflow_response = get_dialogflow_response(incoming_msg)
     if not dialogflow_response:
-        return get_default_error_response("Invalid query.\n", "Please try with another query.\n")
+        help_text = get_help_text()
+        return get_default_error_response("Invalid query.\n", "Please try with another query.\n" + help_text)
 
     dialogflow_intent = dialogflow_response.query_result.intent.display_name
 
@@ -124,18 +129,18 @@ def bot():
     else:
         contact_number, entity, verifiedby, req, location, name, quantity, loc, address, price = get_feed_params(query_fields, entities, cities)
         
-        if not contact_number:
-            return get_default_error_response("Invalid query.\n", "Please provide contact number.\n")
-
-        if not entity:
-            return get_default_error_response("Invalid query.\n", "Please provide entity.\n")
-        
         if entity not in entities:
             return get_default_error_response("Entity not found in system.\n".format(entity), "Please add entity.\n")
 
         if location not in cities:
             return get_default_error_response("City not found in system.\n".format(location), "Please add city.\n")
 
+        if not contact_number:
+            return get_default_error_response("Invalid query.\n", "Please provide contact number.\n")
+
+        if not entity:
+            return get_default_error_response("Invalid query.\n", "Please provide entity.\n")
+        
         if not verifiedby:
             return get_default_error_response("Invalid query.\n", "Please provide verified by.\n")
 

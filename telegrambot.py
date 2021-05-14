@@ -6,7 +6,7 @@ from telegram.ext import Updater, CommandHandler, CallbackContext, MessageHandle
 from dblayer import get_db_connection, get_entities_and_cities, get_db_results, entities, cities, update_feed_data_db
 from dataflow import add_city, add_entity, get_query_fields, get_entity_location_from_query_fields, get_unique_providers_from_ics, get_provider_details, get_feed_params, post_data_to_ics
 from dialogflowhandler import get_dialogflow_response
-from utils import get_verified_at
+from utils import get_verified_at, get_help_text
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -67,6 +67,12 @@ def feed(update, context):
 
     contact_number, entity, verifiedby, req, location, name, quantity, loc, address, price = get_feed_params(query_fields, entities, cities)
         
+    if entity not in entities:
+        return update.message.reply_text("Entity not found in system.\nPlease add entity.".format(entity))
+
+    if location not in cities:
+        return update.message.reply_text("City not found in system.\nPlease add city.".format(location))
+
     if not contact_number:
         update.message.reply_text("Invalid query.\nPlease provide contact number.\n")
         return
@@ -86,12 +92,6 @@ def feed(update, context):
     if not location:
         update.message.reply_text("Invalid query.\nPlease provide location.\n")
         return
-
-    if entity not in entities:
-        return update.message.reply_text("Entity not found in system.\nPlease add entity.".format(entity))
-
-    if location not in cities:
-        return update.message.reply_text("City not found in system.\nPlease add city.".format(location))
     
     feed_data, success = post_data_to_ics(name, req, quantity, loc, address, contact_number)
 
@@ -135,13 +135,14 @@ def query(update, context):
 
 def help(update, context):
     """Send a message when the command /help is issued."""
-    help_text = "Type /query <query> for example: /query hospital in kanpur to get relavant results.\n\nType /feed <query> to feed data. eg; /feed 10 oxygen bed provided by smart care hospital available at swaroop nagar kanpur contact at <provider-contact-number> verified by <verifier-contact-number>.\n\nType /add <message> to add city or entity eg; /add city kanpur"
+    help_text = get_help_text(is_telegram=True)
     update.message.reply_text(help_text)
     return
 
 def error(update, context):
     """Log Errors caused by Updates."""
-    update.message.reply_text('Update "%s" caused error "%s"', update, context.error)
+    if update:
+        update.message.reply_text('Update "%s" caused error "%s"', update, context.error)
     return
 
 def main(api_token):

@@ -2,6 +2,13 @@ import time
 import re
 from datetime import datetime
 
+def get_help_text(is_telegram=False):
+    if is_telegram:
+        help_text = "Type /query <query> for example: /query hospital in kanpur to get relavant results.\n\nType /feed <query> to feed data. eg; /feed 10 oxygen bed provided by smart care hospital available at swaroop nagar kanpur contact at <provider-contact-number> verified by <verifier-contact-number>.\n\nType /add <message> to add city or entity eg; /add city kanpur\n\n\nDeveloped by : Raman Pandey"
+    else:
+        help_text = "Type <query> for example: hospital in kanpur to get relavant results.\n\nType <query> to feed data. just put feed before your query. eg; feed 10 oxygen bed provided by smart care hospital available at swaroop nagar kanpur contact at <provider-contact-number> verified by <verifier-contact-number>.\n\nType add <message> to add city or entity eg; add city kanpur\n\n\nDeveloped by : Raman Pandey"
+    return help_text
+
 def current_milli_time():
     return round(time.time() * 1000)
 
