@@ -1,10 +1,12 @@
 import logging
+from datetime import datetime
 from telegram import Update
 from telegram.ext import Updater, CommandHandler, CallbackContext, MessageHandler, Filters
 
-from dblayer import get_db_connection, get_entities_and_cities, get_db_results, entities, cities
-from dataflow import add_city, add_entity, get_query_fields, get_entity_location_from_query_fields, get_unique_providers_from_ics, get_provider_details
+from dblayer import get_db_connection, get_entities_and_cities, get_db_results, entities, cities, update_feed_data_db
+from dataflow import add_city, add_entity, get_query_fields, get_entity_location_from_query_fields, get_unique_providers_from_ics, get_provider_details, get_feed_params, post_data_to_ics
 from dialogflowhandler import get_dialogflow_response
+from utils import get_verified_at
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -24,6 +26,7 @@ def get_default_error_response(update, error_msg):
 def start(update, context):
     """Send a message when the command /start is issued."""
     update.message.reply_text('Hi from ICSBot :-)')
+    return
 
 def add(update, context):
     """Add city/entity to dialogflow and db when the command /add is issued."""
@@ -50,6 +53,55 @@ def add(update, context):
         update.message.reply_text("Success.\nEntity {} has been added successfully.".format(city_name))
         return
 
+def feed(update, context):
+    """Feed verified lead when /feed is issued."""
+    incoming_query = get_incoming_msg(context)
+    incoming_msg = "feed " + incoming_query
+    logging.debug("Telegram incoming_msg : {}".format(incoming_msg))
+
+    query_fields = get_query_fields(incoming_msg)
+
+    if not query_fields:
+        update.message.reply_text("No data found for your query.\nPlease try with another query.\n")
+        return
+
+    contact_number, entity, verifiedby, req, location, name, quantity, loc, address, price = get_feed_params(query_fields, entities, cities)
+        
+    if not contact_number:
+        update.message.reply_text("Invalid query.\nPlease provide contact number.\n")
+        return
+
+    if not entity:
+        update.message.reply_text("Invalid query.\nPlease provide entity.\n")
+        return
+
+    if not verifiedby:
+        update.message.reply_text("Invalid query.\nPlease provide verified by.\n")
+        return
+
+    if not req:
+        update.message.reply_text("Invalid query.\nPlease provide entity.\n")
+        return
+    
+    if not location:
+        update.message.reply_text("Invalid query.\nPlease provide location.\n")
+        return
+    
+    feed_data, success = post_data_to_ics(name, req, quantity, loc, address, contact_number)
+
+    filed_at = datetime.utcfromtimestamp(feed_data["filedAt"]/1000).isoformat()
+
+    success = update_feed_data_db(collection, entity, location, name, contact_number, address, loc, quantity, filed_at, verifiedby, price)
+
+    if success:
+        verified_at = get_verified_at(filed_at)
+        provider_res = "Name: {}\nEntity: {}\nContact Number: {}\nAddress: {}\nQuantity: {}\nPrice: {}\nVerified At: {}\n\n".format(name, entity, contact_number, address if address else location, quantity if quantity else "Unknown", price, verified_at)
+        update.message.reply_text("Thanks for providing information\n" + provider_res)
+        return
+    else:
+        update.message.reply_text("There is some issue in data feed.\n")
+        return
+
 def query(update, context):
     """Send a message when the command /query is issued."""
     incoming_query = get_incoming_msg(context)
@@ -73,15 +125,18 @@ def query(update, context):
     ics_resp = ''.join(provider_details)
 
     update.message.reply_text('User response for query :-)\n {}'.format(ics_resp))
+    return
 
 def help(update, context):
     """Send a message when the command /help is issued."""
-    help_text = "Type /query <query> for example: /query hospital in kanpur to get relavant results. Type /feed <query> to feed data. Type /add <message> to add city or entity"
+    help_text = "Type /query <query> for example: /query hospital in kanpur to get relavant results.\n\nType /feed <query> to feed data. eg; /feed 10 oxygen bed provided by smart care hospital available at swaroop nagar kanpur contact at <provider-contact-number> verified by <verifier-contact-number>.\n\nType /add <message> to add city or entity eg; /add city kanpur"
     update.message.reply_text(help_text)
+    return
 
 def error(update, context):
     """Log Errors caused by Updates."""
     update.message.reply_text('Update "%s" caused error "%s"', update, context.error)
+    return
 
 def main(api_token):
     """Start the bot."""
@@ -98,6 +153,7 @@ def main(api_token):
     dp.add_handler(CommandHandler("help", help))
     dp.add_handler(CommandHandler("query", query))
     dp.add_handler(CommandHandler("add", add))
+    dp.add_handler(CommandHandler("feed", feed))
 
     # log all errors
     dp.add_error_handler(error)

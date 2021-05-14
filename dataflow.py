@@ -2,7 +2,7 @@ import logging
 import requests
 import uuid
 
-from utils import get_verified_at
+from utils import get_verified_at, get_data_from_field, get_numbers_str, current_milli_time
 from dialogflowhandler import get_dialogflow_response, update_dialogflow_entity
 from dblayer import update_db_entity
 
@@ -111,3 +111,59 @@ def add_entity(incoming_msg, coll):
     update_dialogflow_entity(entity=entity_name)
     update_db_entity(coll, entity=entity_name)
     return entity_name
+
+def get_feed_params(query_fields, entities, cities):
+    name = query_fields['name'].string_value
+    try:
+        location = get_data_from_field(query_fields, 'location')
+    except Exception as e:
+        logging.error (e)
+        location = query_fields['location'].string_value
+    try:
+        entity = get_data_from_field(query_fields, 'entity')
+    except Exception as e:
+        logging.error (e)
+        entity = query_fields['entity'].string_value
+    try:
+        provider_contact = get_data_from_field(query_fields, 'contact')
+    except Exception as e:
+        logging.error (e)
+        provider_contact = query_fields['contact'].string_value
+
+    address = query_fields['address'].string_value
+    quantity = query_fields['quantity'].string_value
+    verifiedby = query_fields['verifiedby'].string_value
+    price = query_fields['price'].string_value
+    
+    contact_number = get_numbers_str(provider_contact)
+    
+    req = entities.get(entity, '').replace("%20", " ")
+    loc = cities.get(location, '').replace("%20", " ")
+    
+    return contact_number, entity, verifiedby, req, location, name, quantity, loc, address, price
+
+def post_data_to_ics(name, req, quantity, loc, address, contact_number):
+    ics_qry = "https://fierce-bayou-28865.herokuapp.com/api/v1/covid/nootp"
+    feed_data = {
+            "name":name,
+            "entity":req,
+            "quantity":quantity if quantity else None,
+            "city":loc,
+            "provider_name":name,
+            "provider_address":address if address else "Unavailable",
+            "provider_contact":contact_number,
+            "contact": contact_number,
+            "link":"",
+            "filedAt":current_milli_time()
+        }
+    logging.debug("data to be sent to ICS : {}".format(feed_data))
+    success = True
+    try:
+        qry_res = requests.post(ics_qry, json=feed_data)
+    except Exception as e:
+        logging.error (e)
+        success = False
+    
+    qry_res_data = qry_res.json()
+    logging.debug(qry_res_data)
+    return feed_data, success

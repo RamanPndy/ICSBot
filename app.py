@@ -1,5 +1,5 @@
 from flask import Flask, request
-import requests, os
+import os
 from twilio.twiml.messaging_response import MessagingResponse
 import logging
 import threading
@@ -7,10 +7,10 @@ from datetime import datetime
 from fpdf import FPDF
 from google.cloud import storage
 
-from utils import current_milli_time, get_verified_at, get_data_from_field, get_numbers_str
-from dataflow import add_city, add_entity, get_query_fields, get_entity_location_from_query_fields, get_unique_providers_from_ics, get_provider_details
+from utils import current_milli_time, get_verified_at, get_numbers_str
+from dataflow import add_city, add_entity, get_query_fields, get_entity_location_from_query_fields, get_unique_providers_from_ics, get_provider_details, get_feed_params,  post_data_to_ics
 from dialogflowhandler import get_dialogflow_response
-from dblayer import get_db_connection, get_entities_and_cities, get_db_results, entities, cities
+from dblayer import get_db_connection, get_entities_and_cities, get_db_results, entities, cities, update_feed_data_db
 from telegrambot import main
 
 APPPORT = os.environ.get('PORT')
@@ -122,27 +122,8 @@ def bot():
             msg.body(ics_resp)
         return str(resp)
     else:
-        name = query_fields['name'].string_value
-        try:
-            location = get_data_from_field(query_fields, 'location')
-        except Exception as e:
-            logging.error (e)
-            location = query_fields['location'].string_value
-        address = query_fields['address'].string_value
-        try:
-            entity = get_data_from_field(query_fields, 'entity')
-        except Exception as e:
-            logging.error (e)
-            entity = query_fields['entity'].string_value
-        provider_contact = query_fields['contact'].string_value
-        quantity = query_fields['quantity'].string_value
-        verifiedby = query_fields['verifiedby'].string_value
-
-        contact_number = get_numbers_str(provider_contact)
-
-        req = entities.get(entity, '').replace("%20", " ")
-        loc = cities.get(location, '').replace("%20", " ")
-
+        contact_number, entity, verifiedby, req, location, name, quantity, loc, address, price = get_feed_params(query_fields, entities, cities)
+        
         if not contact_number:
             return get_default_error_response("Invalid query.\n", "Please provide contact number.\n")
 
@@ -158,44 +139,17 @@ def bot():
         if not location:
             return get_default_error_response("Invalid query.\n", "Please provide location.\n")
 
-        ics_qry = "https://fierce-bayou-28865.herokuapp.com/api/v1/covid/nootp"
-        feed_data = {
-                "name":name,
-                "entity":req,
-                "quantity":quantity if quantity else None,
-                "city":loc,
-                "provider_name":name,
-                "provider_address":address if address else "Unavailable",
-                "provider_contact":contact_number,
-                "contact": contact_number,
-                "link":"",
-                "filedAt":current_milli_time()
-            }
-        logging.debug("data to be sent to ICS : {}".format(feed_data))
-        success = True
-        try:
-            qry_res = requests.post(ics_qry, json=feed_data)
-        except Exception as e:
-            logging.error (e)
-            success = False
-
-        qry_res_data = qry_res.json()
-        logging.debug(qry_res_data)
+        feed_data, success = post_data_to_ics(name, req, quantity, loc, address, contact_number)
 
         filed_at = datetime.utcfromtimestamp(feed_data["filedAt"]/1000).isoformat()
 
-        provider_dict = {"entity": entity, "location": location, "provider_name": name, "provider_contact": contact_number, "contact": contact_number, "provider_address": address if address else loc, "quantity": quantity if quantity else "Unknown", "filedAt": filed_at, "verifiedby": verifiedby}
-        try:
-            collection.update_one({"provider_contact": contact_number}, {"$set": provider_dict}, upsert=True)
-        except Exception as e:
-            logging.error(e)
-            success = False
+        success = update_feed_data_db(collection, entity, location, name, contact_number, address, loc, quantity, filed_at, verifiedby, price)
 
         resp = MessagingResponse()
         if success:
             msg = resp.message("Thanks for providing information\n")
             verified_at = get_verified_at(filed_at)
-            provider_res = "Name: {}\nContact Number: {}\nAddress: {}\nQuantity: {}\nVerified At: {}\n\n".format(name, contact_number, address if address else location, quantity if quantity else "Unknown", verified_at)
+            provider_res = "Name: {}\nEntity: {}\nContact Number: {}\nAddress: {}\nQuantity: {}\nPrice: {}\nVerified At: {}\n\n".format(name, entity, contact_number, address if address else location, quantity if quantity else "Unknown", price, verified_at)
             msg.body(provider_res)
         else:
             msg = resp.message("There is some issue in data feed.\n")

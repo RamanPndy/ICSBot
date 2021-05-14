@@ -37,5 +37,17 @@ def update_db_entity(col, city="", entity=""):
         value = entity.capitalize()
     col.update({'name': "entitiesandcities"}, {'$set': {key: value}})
 
+def update_feed_data_db(coll, entity, location, name, contact_number, address, loc, quantity, filed_at, verifiedby, price):
+    provider_dict = {"entity": entity, "location": location, "provider_name": name, "provider_contact": contact_number, "contact": contact_number, "provider_address": address if address else loc, "quantity": quantity if quantity else "Unknown", "filedAt": filed_at, "verifiedby": verifiedby}
+    if price:
+        provider_dict["price"] = price
+    try:
+        coll.update_one({"provider_contact": contact_number}, {"$set": provider_dict}, upsert=True)
+        success = True
+    except Exception as e:
+        logging.error(e)
+        success = False
+    return success
+
 db_conn = get_db_connection()
 entities, cities = get_entities_and_cities(db_conn.entitiesandcities)
