@@ -86,6 +86,12 @@ def feed(update, context):
     if not location:
         update.message.reply_text("Invalid query.\nPlease provide location.\n")
         return
+
+    if entity not in entities:
+        return update.message.reply_text("Entity not found in system.\nPlease add entity.".format(entity))
+
+    if location not in cities:
+        return update.message.reply_text("City not found in system.\nPlease add city.".format(location))
     
     feed_data, success = post_data_to_ics(name, req, quantity, loc, address, contact_number)
 
@@ -164,4 +170,4 @@ def main(api_token):
     # Run the bot until you press Ctrl-C or the process receives SIGINT,
     # SIGTERM or SIGABRT. This should be used most of the time, since
     # start_polling() is non-blocking and will stop the bot gracefully.
-    updater.idle()
+    # updater.idle()

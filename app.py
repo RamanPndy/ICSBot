@@ -129,6 +129,12 @@ def bot():
 
         if not entity:
             return get_default_error_response("Invalid query.\n", "Please provide entity.\n")
+        
+        if entity not in entities:
+            return get_default_error_response("Entity not found in system.\n".format(entity), "Please add entity.\n")
+
+        if location not in cities:
+            return get_default_error_response("City not found in system.\n".format(location), "Please add city.\n")
 
         if not verifiedby:
             return get_default_error_response("Invalid query.\n", "Please provide verified by.\n")
