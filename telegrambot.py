@@ -28,10 +28,12 @@ def start(update, context):
 def add(update, context):
     """Add city/entity to dialogflow and db when the command /add is issued."""
     incoming_query = get_incoming_msg(context)
+    incoming_msg = "add " + incoming_query
+    logging.debug("Telegram incoming_msg : {}".format(incoming_msg))
 
     dialogflow_response = get_dialogflow_response(incoming_msg)
     if not dialogflow_response:
-        update.message.reply_text("Invalid query.\n", "Please try with another query.\n")
+        update.message.reply_text("Invalid query.\nPlease try with another query.\n")
         return
 
     dialogflow_intent = dialogflow_response.query_result.intent.display_name
@@ -39,13 +41,13 @@ def add(update, context):
     if dialogflow_intent == "AddCity":
         city_name = add_city(incoming_msg, db.entitiesandcities)
         cities[city_name] = city_name.capitalize()
-        update.message.reply_text("Success.\n", "City {} has been added successfully.".format(city_name))
+        update.message.reply_text("Success.\nCity {} has been added successfully.".format(city_name))
         return
 
     if dialogflow_intent == "AddEntity":
         entity_name = add_entity(incoming_msg, db.entitiesandcities)
         entities[entity_name] = entity_name.capitalize()
-        update.message.reply_text("Success.\n", "Entity {} has been added successfully.".format(city_name))
+        update.message.reply_text("Success.\nEntity {} has been added successfully.".format(city_name))
         return
 
 def query(update, context):
