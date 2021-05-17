@@ -1,17 +1,17 @@
 from flask import Flask, request
 import os
 from twilio.twiml.messaging_response import MessagingResponse
-import logging
 import threading
 from datetime import datetime
 from fpdf import FPDF
 from google.cloud import storage
 
-from utils import current_milli_time, get_verified_at, get_numbers_str, get_help_text
+from utils import current_milli_time, get_verified_at, get_numbers_str, get_help_text, get_logger
 from dataflow import add_city, add_entity, get_query_fields, get_entity_location_from_query_fields, get_unique_providers_from_ics, get_provider_details, get_feed_params,  post_data_to_ics
 from dialogflowhandler import get_dialogflow_response
 from dblayer import get_db_connection, get_entities_and_cities, get_db_results, entities, cities, update_feed_data_db
 from telegrambot import main
+from slotbooking import book_slot
 
 APPPORT = os.environ.get('PORT')
 
@@ -23,7 +23,7 @@ app = Flask(__name__)
 google_storage_client = storage.Client.from_service_account_json(json_credentials_path='icsstoragesa.json')
 bucket = google_storage_client.get_bucket('icsbot')
 
-logging.basicConfig(level=logging.DEBUG)
+logger = get_logger()
 
 TELEGRAM_API_TOKEN = os.environ.get("TOKEN")
 
@@ -40,7 +40,7 @@ def get_default_error_response(msg, body):
 @app.route('/bot', methods=['POST'])
 def bot():
     incoming_msg = request.values.get('Body', '').lower()
-    logging.debug(incoming_msg)
+    logger.debug(incoming_msg)
 
     if incoming_msg == "help":
         help_text = get_help_text()
@@ -62,6 +62,15 @@ def bot():
         entity_name = add_entity(incoming_msg, db.entitiesandcities)
         entities[entity_name] = entity_name.capitalize()
         return get_default_error_response("Success.\n", "Entity {} has been added successfully.".format(entity_name))
+
+    import ipdb ; ipdb.set_trace()
+    if dialogflow_intent == "VaccineSlotBooking":
+        query_fields = get_query_fields(incoming_msg)
+        mobile_number = query_fields["mobile_number"].string_value
+        otp = query_fields["otp"].string_value
+        district = query_fields["district"].string_value
+        state = query_fields["state"].string_value
+        book_slot(mobile_number, otp, state, district)
 
     query_fields = get_query_fields(incoming_msg)
 
@@ -87,7 +96,7 @@ def bot():
         media_type = False
         if len(provider_details) < 5:
             ics_resp = ''.join(provider_details)
-            logging.debug (ics_resp)
+            logger.debug (ics_resp)
         else:
             pdf_name = "{}_{}.pdf".format(entity.replace(" ", "_"), location.replace(" ", "_"))
             pdf = FPDF()
@@ -112,7 +121,7 @@ def bot():
             upload_res = object_name_in_gcs_bucket.public_url
             if upload_res:
                 ics_resp = upload_res
-                logging.debug (ics_resp)
+                logger.debug (ics_resp)
                 media_type = True
                 os.remove(pdf_name)
 

@@ -2,6 +2,10 @@ import os
 import pymongo
 import urllib
 
+from utils import get_logger
+
+logger = get_logger()
+
 def get_db_connection():
     db_username = urllib.parse.quote_plus(os.environ.get('DBUSER'))
     db_pass = urllib.parse.quote_plus(os.environ.get('DBPASS'))
@@ -45,7 +49,7 @@ def update_feed_data_db(coll, entity, location, name, contact_number, address, l
         coll.update_one({"provider_contact": contact_number}, {"$set": provider_dict}, upsert=True)
         success = True
     except Exception as e:
-        logging.error(e)
+        logger.error(e)
         success = False
     return success
 
