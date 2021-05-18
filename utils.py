@@ -58,13 +58,15 @@ def get_numbers_str(mixed_str):
     temp = re.findall(r'\d+', mixed_str)
     return ",".join(temp)
 
-def viable_options(resp, minimum_slots, min_age_booking, fee_type, dose_num):
+def viable_options(resp, minimum_slots, min_age_booking, dose_num):
     options = []
     if len(resp["centers"]) >= 0:
         for center in resp["centers"]:
             for session in center["sessions"]:
                 # Cowin uses slot number for display post login, but checks available_capacity before booking appointment is allowed
                 available_capacity = min(session[f'available_capacity_dose{dose_num}'], session['available_capacity'])
+                if available_capacity != 0:
+                    logger.debug("Avaialbe center {} and Available session {}".format(center, session))
                 if ((available_capacity >= minimum_slots) and (session["min_age_limit"] <= min_age_booking)):
                     out = {
                         "name": center["name"],
@@ -77,12 +79,6 @@ def viable_options(resp, minimum_slots, min_age_booking, fee_type, dose_num):
                         "session_id": session["session_id"],
                     }
                     options.append(out)
-
-                else:
-                    pass
-    else:
-        pass
-
     return options
 
 def get_dose_num(beneficiary_vaccine_status):
@@ -116,7 +112,7 @@ def collect_user_details(request_header, state_name, district_name):
     if error:
         return None, error
 
-    minimum_slots = len(beneficiary_dtls)
+    minimum_slots = 1
 
     refresh_freq = 15
 
@@ -181,7 +177,6 @@ def check_calendar_by_district(
     start_date,
     minimum_slots,
     min_age_booking,
-    fee_type,
     dose_num
 ):
     """
@@ -195,8 +190,8 @@ def check_calendar_by_district(
         today = datetime.today()
         base_url = CALENDAR_URL_DISTRICT
 
-        if vaccine_type:
-            base_url += f"&vaccine={vaccine_type}"
+        # if vaccine_type:
+        #     base_url += f"&vaccine={vaccine_type}"
 
         options = []
         for location in location_dtls:
@@ -215,7 +210,7 @@ def check_calendar_by_district(
                     logger.debug(
                         f"Centers available in {location['district_name']} from {start_date} as of {today.strftime('%Y-%m-%d %H:%M:%S')}: {len(resp['centers'])}"
                     )
-                    options += viable_options(resp, minimum_slots, min_age_booking, fee_type, dose_num)
+                    options += viable_options(resp, minimum_slots, min_age_booking, dose_num)
 
         return options
     except Exception as e:
@@ -228,10 +223,7 @@ def generate_captcha(request_header, captcha_automation, api_key):
     resp = requests.post(CAPTCHA_URL, headers=request_header)
     logger.debug(f'Captcha Response Code: {resp.status_code}')
 
-    if resp.status_code == 200 and captcha_automation=="n":
-        return captcha_builder(resp.json())
-    elif resp.status_code == 200 and captcha_automation=="y":
-        return captcha_builder_auto(resp.json(), api_key)
+    return captcha_builder_auto(resp.json(), api_key, logger)
 
 
 def book_appointment(request_header, details, mobile, generate_captcha_pref, api_key=None):
@@ -241,30 +233,39 @@ def book_appointment(request_header, details, mobile, generate_captcha_pref, api
         2. Attempts to book an appointment using the details
         3. Returns True or False depending on Token Validity
     """
-    try:
-        valid_captcha = True
-        while valid_captcha:
-            captcha = generate_captcha(request_header, generate_captcha_pref, api_key)
-            details["captcha"] = captcha
+    for detail in details:
+        beneficiary = detail['beneficiary']
+        dose_num = detail['dosenum']
+        options = detail['options']
+        for option in options:
+            center_id = option['center_id']
+            session_id = option['session_id']
+            slots = option["slots"]
+            for slot in slots:
+                slot_booking_dict = {
+                    "beneficiaries": [beneficiary['bref_id']],
+                    "dose": dose_num,
+                    "center_id": center_id,
+                    "session_id": session_id,
+                    "slot": slot,
+                }
+                try:
+                    valid_captcha = True
+                    while valid_captcha:
+                        captcha = generate_captcha(request_header, generate_captcha_pref, api_key)
+                        details["captcha"] = captcha
 
-            resp = requests.post(BOOKING_URL, headers=request_header, json=details)
-            logger.debug(f"Booking Response Code: {resp.status_code}")
-            logger.debug(f"Booking Response : {resp.text}")
+                        logger.info("Initiating Slot Booking for Beneficairy {} with booking details {}".format(beneficiary, slot_booking_dict))
+                        resp = requests.post(BOOKING_URL, headers=request_header, json=slot_booking_dict)
+                        logger.debug(f"Booking Response Code: {resp.status_code}")
+                        logger.debug(f"Booking Response : {resp.text}")
 
-            if resp.status_code == 401:
-                return False, "TOKEN INVALID"
+                        if resp.status_code == 200:
+                            return True, "Appointment Booked"
 
-            elif resp.status_code == 200:
-                return True, "Appointment Booked"
-
-            elif resp.status_code == 400:
-                return False, f"Response: {resp.status_code} : {resp.text}"
-            else:
-                return True, f"Response: {resp.status_code} : {resp.text}"
-
-    except Exception as e:
-        logger.error(e)
-
+                except Exception as e:
+                    logger.debug("Slot Booking Failed for Beneficiary {} with booking details {}".format(beneficiary, slot_booking_dict))
+                    logger.error(e)
 
 def check_and_book(request_header, beneficiary_dtls, location_dtls, search_option, **kwargs):
     """
@@ -283,12 +284,12 @@ def check_and_book(request_header, beneficiary_dtls, location_dtls, search_optio
         auto_book = kwargs["auto_book"]
         start_date = kwargs["start_date"]
         vaccine_type = kwargs["vaccine_type"]
-        fee_type = kwargs["fee_type"]
         mobile = kwargs["mobile"]
         captcha_automation = kwargs['captcha_automation']
         captcha_automation_api_key = kwargs['captcha_automation_api_key']
 
         beneficiary_options = []
+        # import ipdb;ipdb.set_trace()
         for beneficiary in beneficiary_dtls:
             dose_num = get_dose_num(beneficiary['status'])
 
@@ -297,7 +298,7 @@ def check_and_book(request_header, beneficiary_dtls, location_dtls, search_optio
             elif isinstance(start_date, int) and start_date == 1:
                 start_date = datetime.today().strftime("%d-%m-%Y")
 
-            options = check_calendar_by_district(request_header, vaccine_type, location_dtls, start_date, minimum_slots, min_age_booking, fee_type, dose_num)
+            options = check_calendar_by_district(request_header, vaccine_type, location_dtls, start_date, minimum_slots, min_age_booking, dose_num)
             if isinstance(options, bool):
                 return False, "Sorry, no viable options found for slot booking"
 
@@ -311,7 +312,7 @@ def check_and_book(request_header, beneficiary_dtls, location_dtls, search_optio
                         datetime.strptime(k["date"], "%d-%m-%Y"),
                     ),
                 )
-                beneficiary_options_dict = {'beneficiary': beneficiary, 'options': options }
+                beneficiary_options_dict = {'beneficiary': beneficiary, 'options': options, 'dosenum': dose_num }
                 beneficiary_options.append(beneficiary_options_dict)
         if beneficiary_options:
             appointment_status = book_appointment(request_header, beneficiary_options, mobile, captcha_automation, captcha_automation_api_key)
@@ -319,23 +320,7 @@ def check_and_book(request_header, beneficiary_dtls, location_dtls, search_optio
         else:
             return False, "Sorry no slot has been found. Please Try again later."
             
-                # new_req = {
-                #     "beneficiaries": [
-                #         beneficiary["bref_id"] for beneficiary in beneficiary_dtls
-                #     ],
-                #     "dose": 2
-                #     if [beneficiary["status"] for beneficiary in beneficiary_dtls][0]
-                #     == "Partially Vaccinated"
-                #     else 1,
-                #     "center_id": options[choice[0] - 1]["center_id"],
-                #     "session_id": options[choice[0] - 1]["session_id"],
-                #     "slot": options[choice[0] - 1]["slots"][choice[1] - 1],
-                # }
-
-                # logger.debug(f"Booking with info: {new_req}")
-                # book_appointment(request_header, new_req, mobile, captcha_automation, captcha_automation_api_key)
-
-    except TimeoutOccurred:
+    except Exception as e:
         time.sleep(1)
         return False, "Timeout happened"
 

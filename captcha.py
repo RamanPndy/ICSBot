@@ -28,22 +28,21 @@ def captcha_builder(resp):
     return values['input']
 
 
-def captcha_builder_auto(resp, api_key):
+def captcha_builder_auto(resp, api_key, logger):
     with open('captcha.svg', 'w') as f:
         f.write(re.sub('(<path d=)(.*?)(fill=\"none\"/>)', '', resp['captcha']))
 
     drawing = svg2rlg('captcha.svg')
     renderPM.drawToFile(drawing, "captcha.png", fmt="PNG")
 
-    
     solver = imagecaptcha()
     solver.set_verbose(1)
     solver.set_key(api_key)
     captcha_text = solver.solve_and_return_solution("captcha.png")
 
     if captcha_text != 0:
-        print(f"Captcha text: {captcha_text}")
+        logger.debug(f"Captcha text: {captcha_text}")
     else:
-        print(f"Task finished with error: {solver.error_code}")
+        logger.debug(f"Task finished with error: {solver.error_code}")
 
     return captcha_text

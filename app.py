@@ -117,7 +117,7 @@ def bot():
         if status:
             return get_default_error_response("Trying Slot Booking for mobile number {}, state {} and district {}.\n".format(mobile, state, district), "If slot booling didn't happen. Try again in 2 min.\n")
         else:
-            return get_default_error_response("Error in Slot Booking.\n", error)
+            return get_default_error_response("Slot Booking Response.\n", error)
 
     query_fields = get_query_fields(incoming_msg)
 
@@ -228,5 +228,5 @@ def fulfillment():
 
 if __name__ == '__main__':
     telegram_bot_thread = threading.Thread(target=main, args=(TELEGRAM_API_TOKEN,))
-    # telegram_bot_thread.start()
+    telegram_bot_thread.start()
     app.run(host='0.0.0.0', port=int(APPPORT), threaded=True)
