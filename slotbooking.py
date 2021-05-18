@@ -2,7 +2,7 @@ import copy
 import time
 from types import SimpleNamespace
 import requests, datetime
-from utils import check_and_book, BENEFICIARIES_URL, collect_user_details, get_dose_num, get_logger
+from utils import check_and_book, BENEFICIARIES_URL, collect_user_details, get_logger
 
 logger = get_logger()
 
@@ -23,7 +23,7 @@ def book_slot(mobile, token, state_name, district_name):
     while retry_count < 5:
         # call function to check and book slots
         try:
-            token_valid = check_and_book(request_header, info.beneficiary_dtls, info.location_dtls, info.search_option,
+            token_valid, error = check_and_book(request_header, info.beneficiary_dtls, info.location_dtls, info.search_option,
                                             min_slots=info.minimum_slots,
                                             ref_freq=info.refresh_freq,
                                             auto_book=info.auto_book,
@@ -32,9 +32,10 @@ def book_slot(mobile, token, state_name, district_name):
                                             fee_type=info.fee_type,
                                             mobile=mobile,
                                             captcha_automation=info.captcha_automation,
-                                            captcha_automation_api_key=info.captcha_automation_api_key,
-                                            dose_num=get_dose_num(collected_details))
+                                            captcha_automation_api_key=info.captcha_automation_api_key)
 
+            if error:
+                return False, error
             # check if token is still valid
             beneficiaries_list = requests.get(BENEFICIARIES_URL, headers=request_header)
             if beneficiaries_list.status_code == 200:

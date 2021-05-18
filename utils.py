@@ -65,11 +65,7 @@ def viable_options(resp, minimum_slots, min_age_booking, fee_type, dose_num):
             for session in center["sessions"]:
                 # Cowin uses slot number for display post login, but checks available_capacity before booking appointment is allowed
                 available_capacity = min(session[f'available_capacity_dose{dose_num}'], session['available_capacity'])
-                if (
-                    (available_capacity >= minimum_slots)
-                    and (session["min_age_limit"] <= min_age_booking)
-                    and (center["fee_type"] in fee_type)
-                ):
+                if ((available_capacity >= minimum_slots) and (session["min_age_limit"] <= min_age_booking)):
                     out = {
                         "name": center["name"],
                         "district": center["district_name"],
@@ -89,14 +85,11 @@ def viable_options(resp, minimum_slots, min_age_booking, fee_type, dose_num):
 
     return options
 
-def get_dose_num(collected_details):
-    # If any person has vaccine detail populated, we imply that they'll be taking second dose
-    # Note: Based on the assumption that everyone have the *EXACT SAME* vaccine status 
-    if any(detail['vaccine']
-           for detail in collected_details["beneficiary_dtls"]):
-        return 2
-
-    return 1
+def get_dose_num(beneficiary_vaccine_status):
+    dose_num = 1
+    if beneficiary_vaccine_status == "Partially Vaccinated":
+        dose_num = 2
+    return dose_num
 
 def collect_user_details(request_header, state_name, district_name):
     # Get Beneficiaries
@@ -134,8 +127,8 @@ def collect_user_details(request_header, state_name, district_name):
     fee_type = get_fee_type_preference(0)
 
     auto_book = "yes-please"
-    captcha_automation = "n"
-    captcha_automation_api_key = None
+    captcha_automation = "y"
+    captcha_automation_api_key = os.getenv("ANTICAPTCHAKEY")
 
     search_option = 2
 
@@ -207,10 +200,7 @@ def check_calendar_by_district(
 
         options = []
         for location in location_dtls:
-            resp = requests.get(
-                base_url.format(location["district_id"], start_date),
-                headers=request_header,
-            )
+            resp = requests.get(base_url.format(location["district_id"], start_date), headers=request_header)
 
             if resp.status_code == 401:
                 logger.debug("TOKEN INVALID")
@@ -225,9 +215,7 @@ def check_calendar_by_district(
                     logger.debug(
                         f"Centers available in {location['district_name']} from {start_date} as of {today.strftime('%Y-%m-%d %H:%M:%S')}: {len(resp['centers'])}"
                     )
-                    options += viable_options(
-                        resp, minimum_slots, min_age_booking, fee_type, dose_num
-                    )
+                    options += viable_options(resp, minimum_slots, min_age_booking, fee_type, dose_num)
 
         return options
     except Exception as e:
@@ -299,76 +287,57 @@ def check_and_book(request_header, beneficiary_dtls, location_dtls, search_optio
         mobile = kwargs["mobile"]
         captcha_automation = kwargs['captcha_automation']
         captcha_automation_api_key = kwargs['captcha_automation_api_key']
-        dose_num = kwargs['dose_num']
 
-        if isinstance(start_date, int) and start_date == 2:
-            start_date = (datetime.today() + timedelta(days=1)).strftime("%d-%m-%Y")
-        elif isinstance(start_date, int) and start_date == 1:
-            start_date = datetime.today().strftime("%d-%m-%Y")
+        beneficiary_options = []
+        for beneficiary in beneficiary_dtls:
+            dose_num = get_dose_num(beneficiary['status'])
+
+            if isinstance(start_date, int) and start_date == 2:
+                start_date = (datetime.today() + timedelta(days=1)).strftime("%d-%m-%Y")
+            elif isinstance(start_date, int) and start_date == 1:
+                start_date = datetime.today().strftime("%d-%m-%Y")
+
+            options = check_calendar_by_district(request_header, vaccine_type, location_dtls, start_date, minimum_slots, min_age_booking, fee_type, dose_num)
+            if isinstance(options, bool):
+                return False, "Sorry, no viable options found for slot booking"
+
+            if options:
+                options = sorted(
+                    options,
+                    key=lambda k: (
+                        k["district"].lower(),
+                        k["pincode"],
+                        k["name"].lower(),
+                        datetime.strptime(k["date"], "%d-%m-%Y"),
+                    ),
+                )
+                beneficiary_options_dict = {'beneficiary': beneficiary, 'options': options }
+                beneficiary_options.append(beneficiary_options_dict)
+        if beneficiary_options:
+            appointment_status = book_appointment(request_header, beneficiary_options, mobile, captcha_automation, captcha_automation_api_key)
+            return True, "Congrats, Your slot has been booked."
         else:
-            pass
+            return False, "Sorry no slot has been found. Please Try again later."
+            
+                # new_req = {
+                #     "beneficiaries": [
+                #         beneficiary["bref_id"] for beneficiary in beneficiary_dtls
+                #     ],
+                #     "dose": 2
+                #     if [beneficiary["status"] for beneficiary in beneficiary_dtls][0]
+                #     == "Partially Vaccinated"
+                #     else 1,
+                #     "center_id": options[choice[0] - 1]["center_id"],
+                #     "session_id": options[choice[0] - 1]["session_id"],
+                #     "slot": options[choice[0] - 1]["slots"][choice[1] - 1],
+                # }
 
-        options = check_calendar_by_district(request_header, vaccine_type, location_dtls, start_date, minimum_slots, min_age_booking, fee_type, dose_num)
-        if isinstance(options, bool):
-            return False
-
-        options = sorted(
-            options,
-            key=lambda k: (
-                k["district"].lower(),
-                k["pincode"],
-                k["name"].lower(),
-                datetime.strptime(k["date"], "%d-%m-%Y"),
-            ),
-        )
-
-        tmp_options = copy.deepcopy(options)
-        if len(tmp_options) > 0:
-            cleaned_options_for_display = []
-            for item in tmp_options:
-                item.pop("session_id", None)
-                item.pop("center_id", None)
-                cleaned_options_for_display.append(item)
-
-            display_table(cleaned_options_for_display)
-            randrow = random.randint(1, len(options))
-            randcol = random.randint(1, len(options[randrow - 1]["slots"]))
-            choice = str(randrow) + "." + str(randcol)
-            logger.debug("Random Rows.Column:" + choice)
-
-        else:
-            choice = "."
+                # logger.debug(f"Booking with info: {new_req}")
+                # book_appointment(request_header, new_req, mobile, captcha_automation, captcha_automation_api_key)
 
     except TimeoutOccurred:
         time.sleep(1)
-        return True
-
-    else:
-        if choice == ".":
-            return True
-        else:
-            try:
-                choice = choice.split(".")
-                choice = [int(item) for item in choice]
-
-                new_req = {
-                    "beneficiaries": [
-                        beneficiary["bref_id"] for beneficiary in beneficiary_dtls
-                    ],
-                    "dose": 2
-                    if [beneficiary["status"] for beneficiary in beneficiary_dtls][0]
-                    == "Partially Vaccinated"
-                    else 1,
-                    "center_id": options[choice[0] - 1]["center_id"],
-                    "session_id": options[choice[0] - 1]["session_id"],
-                    "slot": options[choice[0] - 1]["slots"][choice[1] - 1],
-                }
-
-                logger.debug(f"Booking with info: {new_req}")
-                return book_appointment(request_header, new_req, mobile, captcha_automation, captcha_automation_api_key)
-
-            except IndexError as indexerror:
-                logger.error(indexerror)
+        return False, "Timeout happened"
 
 
 def get_vaccine_preference(vaccine_preference):
