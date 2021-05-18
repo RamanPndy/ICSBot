@@ -4,11 +4,12 @@ import json
 import uuid
 import logging
 from hashlib import sha256
-import copy, time, datetime, requests, random
+import copy, time, requests, random, os
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from captcha import captcha_builder, captcha_builder_auto
+from dblayer import get_otp_txnid
 
 BOOKING_URL = "https://cdn-api.co-vin.in/api/v2/appointment/schedule"
 BENEFICIARIES_URL = "https://cdn-api.co-vin.in/api/v2/appointment/beneficiaries"
@@ -107,10 +108,10 @@ def collect_user_details(request_header, state_name, district_name):
 
     # Make sure all beneficiaries have the same type of vaccine
     vaccine_types = [beneficiary["vaccine"] for beneficiary in beneficiary_dtls]
-    vaccines = Counter(vaccine_types)
+    # vaccines = Counter(vaccine_types)
 
-    if len(vaccines.keys()) != 1:
-        return None, f"All beneficiaries in one attempt should have the same vaccine type. Found {len(vaccines.keys())}"
+    # if len(vaccines.keys()) != 1:
+    #     return None, f"All beneficiaries in one attempt should have the same vaccine type. Found {len(vaccines.keys())}"
 
     vaccine_type = vaccine_types[0]  
     # if all([beneficiary['status'] == 'Partially Vaccinated' for beneficiary in beneficiary_dtls]) else None
@@ -133,7 +134,10 @@ def collect_user_details(request_header, state_name, district_name):
     fee_type = get_fee_type_preference(0)
 
     auto_book = "yes-please"
+    captcha_automation = "n"
     captcha_automation_api_key = None
+
+    search_option = 2
 
     # captcha_automation = input("Do you want to automate captcha autofill? (y/n) Default n: ")
     # captcha_automation = "n" if not captcha_automation else captcha_automation
@@ -156,7 +160,7 @@ def collect_user_details(request_header, state_name, district_name):
         'captcha_automation_api_key': captcha_automation_api_key
     }
 
-    return collected_details
+    return collected_details, None
 
 
 def filter_centers_by_age(resp, min_age_booking):
@@ -298,11 +302,9 @@ def check_and_book(request_header, beneficiary_dtls, location_dtls, search_optio
         dose_num = kwargs['dose_num']
 
         if isinstance(start_date, int) and start_date == 2:
-            start_date = (
-                datetime.datetime.today() + datetime.timedelta(days=1)
-            ).strftime("%d-%m-%Y")
+            start_date = (datetime.today() + timedelta(days=1)).strftime("%d-%m-%Y")
         elif isinstance(start_date, int) and start_date == 1:
-            start_date = datetime.datetime.today().strftime("%d-%m-%Y")
+            start_date = datetime.today().strftime("%d-%m-%Y")
         else:
             pass
 
@@ -316,7 +318,7 @@ def check_and_book(request_header, beneficiary_dtls, location_dtls, search_optio
                 k["district"].lower(),
                 k["pincode"],
                 k["name"].lower(),
-                datetime.datetime.strptime(k["date"], "%d-%m-%Y"),
+                datetime.strptime(k["date"], "%d-%m-%Y"),
             ),
         )
 
@@ -404,27 +406,26 @@ def get_districts(request_header, state_name, district_name):
 
     if states.status_code == 200:
         states = states.json()["states"]
-
+        state_id = None
         for state in states:
-            if state_name == state["state_name"]:
+            if state_name == state["state_name"].lower():
                 state_id = state["state_id"]
                 break
 
         if not state_id:
             return [], "State is not found with Name {}".format(state_name)
 
-        districts = requests.get(DISTRICTS_URL + state_id, headers=request_header)
+        districts = requests.get(DISTRICTS_URL + str(state_id), headers=request_header)
 
         if districts.status_code == 200:
             districts = districts.json()["districts"]
 
             refined_districts = []
             for district in districts:
-                if district_name == district["district_name"]:
+                if district_name == district["district_name"].lower():
                     district_info = {
                         "district_id": district["district_id"],
-                        "district_name": district["district_name"],
-                        "alert_freq": 440 + ((2 * idx) * 110),
+                        "district_name": district["district_name"]
                     }
                     refined_districts.append(district_info)
 
@@ -451,7 +452,7 @@ def get_beneficiaries(request_header):
 
         refined_beneficiaries = []
         for beneficiary in beneficiaries:
-            beneficiary["age"] = datetime.datetime.today().year - int(beneficiary["birth_year"])
+            beneficiary["age"] = datetime.today().year - int(beneficiary["birth_year"])
 
             tmp = {
                 "bref_id": beneficiary["beneficiary_reference_id"],
@@ -463,7 +464,7 @@ def get_beneficiaries(request_header):
             refined_beneficiaries.append(tmp)
 
         reqd_beneficiaries = 10
-        beneficiary_idx = [int(idx) - 1 for idx in reqd_beneficiaries.split(",")]
+        beneficiary_idx = [int(idx) - 1 for idx in range(reqd_beneficiaries)]
         reqd_beneficiaries = [
             {
                 "bref_id": item["beneficiary_reference_id"],
@@ -487,37 +488,30 @@ def get_min_age(beneficiary_dtls):
     min_age = min(age_list)
     return min_age
 
-def generate_token_OTP_manual(mobile, otp, request_header):
-    """
-    This function generate OTP and returns a new token
-    """
+def sendCowinOTP(mobile):
+    data = {"mobile": mobile, "secret": os.getenv("COWINOTPSECRET")}
+    request_header = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'}
+    txnResp = requests.post(url=OTP_PRO_URL, json=data, headers=request_header)
 
-    if not mobile:
-        return None, "Mobile number cannot be empty"
-    
-    if not otp:
-        return  None, "OTP cannot be empty"
+    if txnResp.status_code == 200:
+        logger.debug(f"Successfully requested OTP for mobile number {mobile} at {datetime.today()}..")
+        txnId = txnResp.json()['txnId']
+        return txnId
 
+def validateCowinOTP(coll, mobile, otp):
+    otpTxnId = get_otp_txnid(coll, mobile)
+    request_header = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'}
     try:
-        data = {"mobile": mobile,
-                "secret": "U2FsdGVkX1+z/4Nr9nta+2DrVJSv7KS6VoQUSQ1ZXYDx/CJUkWxFYG6P3iM/VW+6jLQ9RDQVzp/RcZ8kbT41xw=="
-        }
-        txnId = requests.post(url=OTP_PRO_URL, json=data, headers=request_header)
+        data = {"otp": sha256(str(otp).encode('utf-8')).hexdigest(), "txnId": otpTxnId}
+        logger.debug(f"Validating OTP..")
 
-        if txnId.status_code == 200:
-            logger.debug(f"Successfully requested OTP for mobile number {mobile} at {datetime.today()}..")
-            txnId = txnId.json()['txnId']
-
-            data = {"otp": sha256(str(otp).encode('utf-8')).hexdigest(), "txnId": txnId}
-            logger.debug(f"Validating OTP..")
-
-            token = requests.post(url=VALIDATE_MOBILE_OTP_URL, json=data, headers=request_header)
-            if token.status_code == 200:
-                token = token.json()['token']
-                logger.debug(f'Token Generated: {token}')
-                return token, None
+        token = requests.post(url=VALIDATE_MOBILE_OTP_URL, json=data, headers=request_header)
+        if token.status_code == 200:
+            token = token.json()['token']
+            logger.debug(f'Token Generated: {token}')
+            return token, None
         else:
             return None, "Token not generated for given OTP and Mobile Number"
-
     except Exception as e:
         logger.error(e)
+        return None, str(e)

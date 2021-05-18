@@ -2,29 +2,25 @@ import copy
 import time
 from types import SimpleNamespace
 import requests, datetime
-from utils import generate_token_OTP_manual, check_and_book, BENEFICIARIES_URL, collect_user_details, get_dose_num, get_logger
+from utils import check_and_book, BENEFICIARIES_URL, collect_user_details, get_dose_num, get_logger
 
 logger = get_logger()
 
-def book_slot(mobile, otp, state_name, district_name):
+def book_slot(mobile, token, state_name, district_name):
     base_request_header = {
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36',
         }
-    token, error = generate_token_OTP_manual(mobile, otp, base_request_header)
-    if error:
-        return error
 
     request_header = copy.deepcopy(base_request_header)
     request_header["Authorization"] = f"Bearer {token}"
 
-    collected_details = collect_user_details(request_header, state_name, district_name)
+    collected_details, error = collect_user_details(request_header, state_name, district_name)
+    if error:
+        return False, error
     info = SimpleNamespace(**collected_details)
 
-    token_valid = True
-    while token_valid:
-        request_header = copy.deepcopy(base_request_header)
-        request_header["Authorization"] = f"Bearer {token}"
-
+    retry_count = 1
+    while retry_count < 5:
         # call function to check and book slots
         try:
             token_valid = check_and_book(request_header, info.beneficiary_dtls, info.location_dtls, info.search_option,
@@ -43,18 +39,17 @@ def book_slot(mobile, otp, state_name, district_name):
             beneficiaries_list = requests.get(BENEFICIARIES_URL, headers=request_header)
             if beneficiaries_list.status_code == 200:
                 token_valid = True
-
+                return True, "Slot has been booked. You will get notification on your registered mobile number."
             else:
-                # if token invalid, regenerate OTP and new token
-                # beep(WARNING_BEEP_DURATION[0], WARNING_BEEP_DURATION[1])
+                # if token invalid, retry 5 times
                 logger.info('Token is INVALID.')
-                token_valid = False
-                token = None
+                retry_count = retry_count + 1
 
-                while token is None:
-                    token = generate_token_OTP_manual(mobile, base_request_header)
-                token_valid = True
+                logger.info('Retryin in 5 seconds')
+                time.sleep(5)    
         except Exception as e:
             logger.error(e)
             logger.info('Retryin in 5 seconds')
+            retry_count = retry_count + 1
             time.sleep(5)
+    return False, "Slot Booking Failed. Please Try again in Sometime."
