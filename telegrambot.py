@@ -1,4 +1,3 @@
-import logging
 from datetime import datetime
 from telegram import Update
 from telegram.ext import Updater, CommandHandler, CallbackContext, MessageHandler, Filters
@@ -6,9 +5,9 @@ from telegram.ext import Updater, CommandHandler, CallbackContext, MessageHandle
 from dblayer import get_db_connection, get_entities_and_cities, get_db_results, entities, cities, update_feed_data_db
 from dataflow import add_city, add_entity, get_query_fields, get_entity_location_from_query_fields, get_unique_providers_from_ics, get_provider_details, get_feed_params, post_data_to_ics
 from dialogflowhandler import get_dialogflow_response
-from utils import get_verified_at, get_help_text
+from utils import get_verified_at, get_help_text, get_logger
 
-logging.basicConfig(level=logging.DEBUG)
+logger = get_logger()
 
 db = get_db_connection()
 collection = db.ics
@@ -16,7 +15,7 @@ collection = db.ics
 def get_incoming_msg(context):
     context_args = context.args
     incoming_query = " ".join(context_args)
-    logging.debug("Telegram Query : {}".format(incoming_query))
+    logger.debug("Telegram Query : {}".format(incoming_query))
     return incoming_query
 
 def get_default_error_response(update, error_msg):
@@ -32,7 +31,7 @@ def add(update, context):
     """Add city/entity to dialogflow and db when the command /add is issued."""
     incoming_query = get_incoming_msg(context)
     incoming_msg = "add " + incoming_query
-    logging.debug("Telegram incoming_msg : {}".format(incoming_msg))
+    logger.debug("Telegram incoming_msg : {}".format(incoming_msg))
 
     dialogflow_response = get_dialogflow_response(incoming_msg)
     if not dialogflow_response:
@@ -57,7 +56,7 @@ def feed(update, context):
     """Feed verified lead when /feed is issued."""
     incoming_query = get_incoming_msg(context)
     incoming_msg = "feed " + incoming_query
-    logging.debug("Telegram incoming_msg : {}".format(incoming_msg))
+    logger.debug("Telegram incoming_msg : {}".format(incoming_msg))
 
     query_fields = get_query_fields(incoming_msg)
 

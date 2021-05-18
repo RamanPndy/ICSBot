@@ -1,17 +1,17 @@
 from flask import Flask, request
 import os
 from twilio.twiml.messaging_response import MessagingResponse
-import logging
 import threading
 from datetime import datetime
 from fpdf import FPDF
 from google.cloud import storage
 
-from utils import current_milli_time, get_verified_at, get_numbers_str, get_help_text
+from utils import current_milli_time, get_verified_at, get_numbers_str, get_help_text, get_logger, sendCowinOTP, validateCowinOTP
 from dataflow import add_city, add_entity, get_query_fields, get_entity_location_from_query_fields, get_unique_providers_from_ics, get_provider_details, get_feed_params,  post_data_to_ics
-from dialogflowhandler import get_dialogflow_response
-from dblayer import get_db_connection, get_entities_and_cities, get_db_results, entities, cities, update_feed_data_db
+from dialogflowhandler import get_dialogflow_response, get_dialogflow_context_parameters
+from dblayer import get_db_connection, get_entities_and_cities, get_db_results, entities, cities, update_feed_data_db, get_user_token
 from telegrambot import main
+from slotbooking import book_slot
 
 APPPORT = os.environ.get('PORT')
 
@@ -23,7 +23,7 @@ app = Flask(__name__)
 google_storage_client = storage.Client.from_service_account_json(json_credentials_path='icsstoragesa.json')
 bucket = google_storage_client.get_bucket('icsbot')
 
-logging.basicConfig(level=logging.DEBUG)
+logger = get_logger()
 
 TELEGRAM_API_TOKEN = os.environ.get("TOKEN")
 
@@ -40,7 +40,7 @@ def get_default_error_response(msg, body):
 @app.route('/bot', methods=['POST'])
 def bot():
     incoming_msg = request.values.get('Body', '').lower()
-    logging.debug(incoming_msg)
+    logger.debug(incoming_msg)
 
     if incoming_msg == "help":
         help_text = get_help_text()
@@ -62,6 +62,62 @@ def bot():
         entity_name = add_entity(incoming_msg, db.entitiesandcities)
         entities[entity_name] = entity_name.capitalize()
         return get_default_error_response("Success.\n", "Entity {} has been added successfully.".format(entity_name))
+
+    if dialogflow_intent in ["VaccineSlotBooking", "ResendCowinOTP"]:
+        outCnt = get_dialogflow_context_parameters(dialogflow_response.query_result, "userprovidesmobilenumber")
+        if not outCnt:
+            return get_default_error_response("Invalid Query.\n", "Internal context issue.Please try sending the query again.\n")
+        mobile_number = outCnt.get('mobile_number')
+        mobile = get_numbers_str(mobile_number)
+        if not mobile:
+            return get_default_error_response("Invalid Data.\n", "Please provide valid mobile number.\n")
+        txnID = sendCowinOTP(mobile)
+        if not txnID:
+            return get_default_error_response("Invalid Query.\n", "Internal issue sending Cowin OTP.\n")
+        otp_dict = {"mobile": mobile, "transactionid": txnID, "createdAt": current_milli_time()}
+        db.otp.update_one({"mobile": mobile}, {"$set": otp_dict}, upsert=True)
+        fulfillment_text = dialogflow_response.query_result.fulfillment_text
+        return get_default_error_response("", fulfillment_text)
+
+    if dialogflow_intent == "VaccineOTPVerification":
+        outCnt = get_dialogflow_context_parameters(dialogflow_response.query_result, "userprovidesmobilenumber")
+        if not outCnt:
+            return get_default_error_response("Invalid Query.\n", "Internal context issue.Please try sending the query again.\n")
+        mobile_number = outCnt.get('mobile_number')
+        mobile = get_numbers_str(mobile_number)
+        if not mobile_number:
+            return get_default_error_response("Invalid Data.\n", "Please provide valid mobile number.\n")
+        otp = outCnt.get('otp')
+        if not otp:
+            return get_default_error_response("Invalid Data.\n", "Please provide valid CoWIN OTP.\n")
+        token, error = validateCowinOTP(db.otp, mobile, otp)
+        if token:
+            db.otp.update_one({"mobile": mobile}, {"$set": {"token": token, "updatedAt": current_milli_time()}}, upsert=True)
+            fulfillment_text = dialogflow_response.query_result.fulfillment_text
+            return get_default_error_response("", fulfillment_text)
+        else:
+            return get_default_error_response("", "Please provide state and district name")
+    
+    if dialogflow_intent == "VaccineStateAndDistrict":
+        outCnt = get_dialogflow_context_parameters(dialogflow_response.query_result, "userprovidesmobilenumber")
+        if not outCnt:
+            return get_default_error_response("Invalid Query.\n", "Internal context issue.Please try sending the query again.\n")
+        mobile_number = outCnt.get('mobile_number') if outCnt else None
+        if not mobile_number:
+            return get_default_error_response("Invalid Data.\n", "Please provide valid mobile number.\n")
+        mobile = get_numbers_str(mobile_number)
+        state = outCnt.get('state')
+        district = outCnt.get('district')
+        if not state:
+            return get_default_error_response("Invalid Data.\n", "Please provide State Name.\n")
+        if not district:
+            return get_default_error_response("Invalid Data.\n", "Please provide District Name.\n")
+        token = get_user_token(db.otp, mobile)
+        status, error = book_slot(mobile, token, state, district)
+        if status:
+            return get_default_error_response("Trying Slot Booking for mobile number {}, state {} and district {}.\n".format(mobile, state, district), "If slot booling didn't happen. Try again in 2 min.\n")
+        else:
+            return get_default_error_response("Slot Booking Response.\n", error)
 
     query_fields = get_query_fields(incoming_msg)
 
@@ -87,7 +143,7 @@ def bot():
         media_type = False
         if len(provider_details) < 5:
             ics_resp = ''.join(provider_details)
-            logging.debug (ics_resp)
+            logger.debug (ics_resp)
         else:
             pdf_name = "{}_{}.pdf".format(entity.replace(" ", "_"), location.replace(" ", "_"))
             pdf = FPDF()
@@ -112,7 +168,7 @@ def bot():
             upload_res = object_name_in_gcs_bucket.public_url
             if upload_res:
                 ics_resp = upload_res
-                logging.debug (ics_resp)
+                logger.debug (ics_resp)
                 media_type = True
                 os.remove(pdf_name)
 

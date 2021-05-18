@@ -45,9 +45,17 @@ def update_feed_data_db(coll, entity, location, name, contact_number, address, l
         coll.update_one({"provider_contact": contact_number}, {"$set": provider_dict}, upsert=True)
         success = True
     except Exception as e:
-        logging.error(e)
+        print(e)
         success = False
     return success
+
+def get_otp_txnid(collection, mobile):
+    dbresult = collection.find_one({"mobile": mobile}, {"_id":0})
+    return dbresult.get('transactionid')
+
+def get_user_token(collection, mobile):
+    dbresult = collection.find_one({"mobile": mobile}, {"_id":0})
+    return dbresult.get('token')
 
 db_conn = get_db_connection()
 entities, cities = get_entities_and_cities(db_conn.entitiesandcities)

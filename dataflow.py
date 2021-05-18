@@ -1,17 +1,16 @@
-import logging
 import requests
 import uuid
 
-from utils import get_verified_at, get_data_from_field, get_numbers_str, current_milli_time
+from utils import get_verified_at, get_data_from_field, get_numbers_str, current_milli_time, get_logger
 from dialogflowhandler import get_dialogflow_response, update_dialogflow_entity
 from dblayer import update_db_entity
 
-logging.basicConfig(level=logging.DEBUG)
+logger = get_logger()
 
 def get_query_fields(incoming_msg):
     response = get_dialogflow_response(incoming_msg)
     query_fields = response.query_result.parameters.fields
-    logging.debug("Response Parameters: {}".format(query_fields))
+    logger.debug("Response Parameters: {}".format(query_fields))
     return query_fields
 
 def get_entity_location_from_query_fields(query_fields, entities, cities):
@@ -25,11 +24,11 @@ def get_entity_location_from_query_fields(query_fields, entities, cities):
 
 def get_unique_providers_from_ics(req, loc):
     ics_qry = "https://fierce-bayou-28865.herokuapp.com/api/v1/covid/?entity={}&city={}".format(req, loc)
-    logging.debug (ics_qry)
+    logger.debug (ics_qry)
     
     qry_res = requests.get(ics_qry)
     qry_res_data = qry_res.json()
-    logging.debug (qry_res_data)
+    logger.debug (qry_res_data)
     
     qry_providers = qry_res_data["data"]["covid"]
     each_dict = {}
@@ -88,7 +87,7 @@ def get_provider_details(dbfiltereddata, unique_providers, entity, location):
         try:
             collection.insert_one(provider_dict)
         except Exception as e:
-            logging.error(e)
+            logger.error(e)
     
     provider_details = []
     for provider in providers_data:
@@ -117,17 +116,17 @@ def get_feed_params(query_fields, entities, cities):
     try:
         location = get_data_from_field(query_fields, 'location')
     except Exception as e:
-        logging.error (e)
+        logger.error (e)
         location = query_fields['location'].string_value
     try:
         entity = get_data_from_field(query_fields, 'entity')
     except Exception as e:
-        logging.error (e)
+        logger.error (e)
         entity = query_fields['entity'].string_value
     try:
         provider_contact = get_data_from_field(query_fields, 'contact')
     except Exception as e:
-        logging.error (e)
+        logger.error (e)
         provider_contact = query_fields['contact'].string_value
 
     address = query_fields['address'].string_value
@@ -156,14 +155,14 @@ def post_data_to_ics(name, req, quantity, loc, address, contact_number):
             "link":"",
             "filedAt":current_milli_time()
         }
-    logging.debug("data to be sent to ICS : {}".format(feed_data))
+    logger.debug("data to be sent to ICS : {}".format(feed_data))
     success = True
     try:
         qry_res = requests.post(ics_qry, json=feed_data)
     except Exception as e:
-        logging.error (e)
+        logger.error (e)
         success = False
     
     qry_res_data = qry_res.json()
-    logging.debug(qry_res_data)
+    logger.debug(qry_res_data)
     return feed_data, success

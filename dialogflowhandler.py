@@ -1,6 +1,8 @@
 import dialogflow
 import os
+import json
 from google.api_core.exceptions import InvalidArgument
+from google.protobuf.json_format import MessageToJson
 
 PROJECT_ID = os.environ.get('PROJECTID')
 LOCATION_ENTITY_UUID = os.environ.get('LOCATION_ENTITY_UUID')
@@ -35,3 +37,13 @@ def update_dialogflow_entity(city="", entity=""):
             synonyms = [entity]
         )
         response = entity_type_client.batch_update_entities(entity_parent, [entity_to_update])
+
+def get_dialogflow_context_parameters(query_result, context_name):
+    query_parameters = {}
+    for context in query_result.output_contexts:
+        if context_name in context.name:
+            query_parameters = context.parameters
+            break
+    if query_parameters:
+        context_params = json.loads(MessageToJson(query_parameters))
+        return context_params
