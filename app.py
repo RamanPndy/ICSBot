@@ -9,7 +9,7 @@ from google.cloud import storage
 from utils import current_milli_time, get_verified_at, get_numbers_str, get_help_text, get_logger, sendCowinOTP, validateCowinOTP
 from dataflow import add_city, add_entity, get_query_fields, get_entity_location_from_query_fields, get_unique_providers_from_ics, get_provider_details, get_feed_params,  post_data_to_ics
 from dialogflowhandler import get_dialogflow_response, get_dialogflow_context_parameters
-from dblayer import get_db_connection, get_entities_and_cities, get_db_results, entities, cities, update_feed_data_db, get_user_token
+from dblayer import get_db_connection, get_db_results, entities, cities, update_feed_data_db, get_user_token
 from telegrambot import main
 from slotbooking import book_slot
 
@@ -63,6 +63,7 @@ def bot():
         entities[entity_name] = entity_name.capitalize()
         return get_default_error_response("Success.\n", "Entity {} has been added successfully.".format(entity_name))
 
+    logger.debug("Dialogflow Reponse : ".format(dialogflow_response))
     if dialogflow_intent in ["VaccineSlotBooking", "ResendCowinOTP"]:
         outCnt = get_dialogflow_context_parameters(dialogflow_response.query_result, "userprovidesmobilenumber")
         if not outCnt:

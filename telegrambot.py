@@ -1,11 +1,12 @@
 from datetime import datetime
 from telegram import Update
-from telegram.ext import Updater, CommandHandler, CallbackContext, MessageHandler, Filters
+from telegram.ext import Updater, CommandHandler
 
-from dblayer import get_db_connection, get_entities_and_cities, get_db_results, entities, cities, update_feed_data_db
+from dblayer import get_db_connection, get_db_results, entities, cities, update_feed_data_db, get_user_token
 from dataflow import add_city, add_entity, get_query_fields, get_entity_location_from_query_fields, get_unique_providers_from_ics, get_provider_details, get_feed_params, post_data_to_ics
-from dialogflowhandler import get_dialogflow_response
-from utils import get_verified_at, get_help_text, get_logger
+from dialogflowhandler import get_dialogflow_response, get_dialogflow_context_parameters
+from utils import current_milli_time, get_verified_at, get_numbers_str, get_help_text, get_logger, sendCowinOTP, validateCowinOTP
+from slotbooking import book_slot
 
 logger = get_logger()
 
@@ -132,6 +133,94 @@ def query(update, context):
     update.message.reply_text('User response for query :-)\n {}'.format(ics_resp))
     return
 
+def book(update, context):
+    """Send a message when the command /query is issued."""
+    incoming_query = get_incoming_msg(context)
+    incoming_msg = "book " + incoming_query
+    logger.debug("Telegram incoming_msg : {}".format(incoming_msg))
+
+    dialogflow_response = get_dialogflow_response(incoming_msg)
+    if not dialogflow_response:
+        update.message.reply_text("Invalid query.\nPlease try with another query.\n")
+        return
+
+    dialogflow_intent = dialogflow_response.query_result.intent.display_name
+    logger.debug("Dialogflow Response : ".format(dialogflow_response))
+
+    if dialogflow_intent in ["VaccineSlotBooking", "ResendCowinOTP"]:
+        outCnt = get_dialogflow_context_parameters(dialogflow_response.query_result, "userprovidesmobilenumber")
+        if not outCnt:
+            update.message.reply_text("Internal context issue.Please try sending the query again.\n")
+            return
+        mobile_number = outCnt.get('mobile_number')
+        mobile = get_numbers_str(mobile_number)
+        if not mobile:
+            update.message.reply_text("Please provide valid mobile number.\n")
+            return
+        txnID = sendCowinOTP(mobile)
+        if not txnID:
+            update.message.reply_text("Internal issue sending Cowin OTP.\n")
+            return
+        otp_dict = {"mobile": mobile, "transactionid": txnID, "createdAt": current_milli_time()}
+        db.otp.update_one({"mobile": mobile}, {"$set": otp_dict}, upsert=True)
+        fulfillment_text = dialogflow_response.query_result.fulfillment_text
+        update.message.reply_text(fulfillment_text)
+        return
+
+    if dialogflow_intent == "VaccineOTPVerification":
+        outCnt = get_dialogflow_context_parameters(dialogflow_response.query_result, "userprovidesmobilenumber")
+        if not outCnt:
+            update.message.reply_text("Internal context issue.Please try sending the query again.\n")
+            return
+        mobile_number = outCnt.get('mobile_number')
+        mobile = get_numbers_str(mobile_number)
+        if not mobile_number:
+            update.message.reply_text("Please provide valid mobile number.\n")
+            return
+        otp = outCnt.get('otp')
+        if not otp:
+            update.message.reply_text("Please provide valid CoWIN OTP.\n")
+            return
+        token, error = validateCowinOTP(db.otp, mobile, otp)
+        if token:
+            db.otp.update_one({"mobile": mobile}, {"$set": {"token": token, "updatedAt": current_milli_time()}}, upsert=True)
+            fulfillment_text = dialogflow_response.query_result.fulfillment_text
+            update.message.reply_text(fulfillment_text)
+            return
+        else:
+            update.message.reply_text("Please provide state and district name")
+            return
+    
+    if dialogflow_intent == "VaccineStateAndDistrict":
+        outCnt = get_dialogflow_context_parameters(dialogflow_response.query_result, "userprovidesmobilenumber")
+        if not outCnt:
+            update.message.reply_text("Internal context issue.Please try sending the query again.\n")
+            return
+        mobile_number = outCnt.get('mobile_number') if outCnt else None
+        if not mobile_number:
+            update.message.reply_text("Please provide valid mobile number.\n")
+            return
+        mobile = get_numbers_str(mobile_number)
+        state = outCnt.get('state')
+        district = outCnt.get('district')
+        if not state:
+            update.message.reply_text("Please provide State Name.\n")
+            return
+        if not district:
+            update.message.reply_text("Please provide District Name.\n")
+            return
+        token = get_user_token(db.otp, mobile)
+        status, error = book_slot(mobile, token, state, district)
+        if status:
+            update.message.reply_text("Trying Slot Booking for mobile number {}, state {} and district {}.\n".format(mobile, state, district) + "If slot booling didn't happen. Try again in 2 min.\n")
+            return
+        else:
+            update.message.reply_text("Slot Booking Response.\n" + error)
+            return
+    
+    update.message.reply_text("Internal Issue for slot booking")
+    return
+
 def help(update, context):
     """Send a message when the command /help is issued."""
     help_text = get_help_text(is_telegram=True)
@@ -160,6 +249,7 @@ def main(api_token):
     dp.add_handler(CommandHandler("query", query))
     dp.add_handler(CommandHandler("add", add))
     dp.add_handler(CommandHandler("feed", feed))
+    dp.add_handler(CommandHandler("book", book))
 
     # log all errors
     dp.add_error_handler(error)

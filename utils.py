@@ -442,29 +442,45 @@ def get_min_age(beneficiary_dtls):
     min_age = min(age_list)
     return min_age
 
+def get_cowin_request_headers():
+    request_header = {'Origin': 'https://selfregistration.cowin.gov.in', 'Referer': 'https://selfregistration.cowin.gov.in',
+    'authority': 'cdn-api.co-vin.in', 'scheme': 'https', 'sec-ch-ua': '" Not A;Brand";v="99", "Chromium";v="90", "Google Chrome";v="90"',
+    'sec-ch-ua-mobile': '?0', 'sec-fetch-dest': 'empty', 'sec-fetch-mode': 'cors', 'sec-fetch-site': 'cross-site',
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36'}
+    return request_header
+
 def sendCowinOTP(mobile):
     data = {"mobile": mobile, "secret": os.getenv("COWINOTPSECRET")}
-    request_header = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'}
+    request_header = get_cowin_request_headers()
     txnResp = requests.post(url=OTP_PRO_URL, json=data, headers=request_header)
 
     if txnResp.status_code == 200:
         logger.debug(f"Successfully requested OTP for mobile number {mobile} at {datetime.today()}..")
         txnId = txnResp.json()['txnId']
         return txnId
+    else:
+        logger.debug(txnResp.status_code)
+        logger.debug("--------------------Sending Cowin OTP issue ------------------------------------------------------")
+        logger.debug(txnResp.content)
+        logger.debug("Sending COWIN OTP request Payload {} and headers {}".format(data, request_header))
 
 def validateCowinOTP(coll, mobile, otp):
     otpTxnId = get_otp_txnid(coll, mobile)
-    request_header = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'}
+    request_header = get_cowin_request_headers()
     try:
         data = {"otp": sha256(str(otp).encode('utf-8')).hexdigest(), "txnId": otpTxnId}
         logger.debug(f"Validating OTP..")
 
-        token = requests.post(url=VALIDATE_MOBILE_OTP_URL, json=data, headers=request_header)
-        if token.status_code == 200:
-            token = token.json()['token']
+        tokenResp = requests.post(url=VALIDATE_MOBILE_OTP_URL, json=data, headers=request_header)
+        if tokenResp.status_code == 200:
+            token = tokenResp.json()['token']
             logger.debug(f'Token Generated: {token}')
             return token, None
         else:
+            logger.debug(tokenResp.status_code)
+            logger.debug("--------------------Validating Cowin OTP issue ------------------------------------------------------")
+            logger.debug(tokenResp.content)
+            logger.debug("Validating COWIN OTP request Payload {} and headers {}".format(data, request_header))
             return None, "Token not generated for given OTP and Mobile Number"
     except Exception as e:
         logger.error(e)
